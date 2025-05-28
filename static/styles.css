@@ -82,6 +82,7 @@ html, body {
     left: -50px;
     min-width: 300px;
     max-width: 400px;
+    z-index: 1000;
 }
 
 .ol-popup:after {
@@ -106,17 +107,18 @@ html, body {
     color: #6b7280;
     font-size: 18px;
     transition: color 0.2s;
+    z-index: 1001;
 }
 
 .ol-popup-closer:hover {
     color: #ef4444;
 }
 
-/* Map Controls */
+/* Map Controls - Updated for top-right positioning */
 .map-controls {
     position: absolute;
     top: 20px;
-    left: 20px;
+    right: 20px;
     z-index: 1000;
 }
 
@@ -126,6 +128,17 @@ html, body {
     border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 16px;
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+}
+
+/* Enhanced Chat Window Styles */
+.chat-window-tall {
+    height: 600px !important;
+    min-height: 500px;
+}
+
+.chat-messages-expanded {
+    max-height: 450px;
+    overflow-y: auto;
 }
 
 /* Input Styles */
@@ -164,7 +177,53 @@ html, body {
     background: rgba(102, 126, 234, 0.7);
 }
 
-/* Utility Classes */
+/* Improved Feature Badge */
+.feature-badge {
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 12px;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+}
+
+/* Building Type Indicators */
+.building-historic {
+    background-color: rgba(139, 0, 0, 0.1);
+    border-left: 4px solid #8B0000;
+}
+
+.building-old {
+    background-color: rgba(255, 69, 0, 0.1);
+    border-left: 4px solid #FF4500;
+}
+
+.building-modern {
+    background-color: rgba(50, 205, 50, 0.1);
+    border-left: 4px solid #32CD32;
+}
+
+.building-new {
+    background-color: rgba(30, 144, 255, 0.1);
+    border-left: 4px solid #1E90FF;
+}
+
+/* Geometry Type Icons */
+.geometry-point::before {
+    content: "📍";
+    margin-right: 4px;
+}
+
+.geometry-polygon::before {
+    content: "🏢";
+    margin-right: 4px;
+}
+
+.geometry-line::before {
+    content: "🛤️";
+    margin-right: 4px;
+}
+
+/* Enhanced Animations */
 .animate-fade-in {
     animation: fadeIn 0.5s ease-in-out;
 }
@@ -175,6 +234,10 @@ html, body {
 
 .animate-pulse-slow {
     animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.animate-bounce-subtle {
+    animation: bounceSubtle 2s infinite;
 }
 
 @keyframes fadeIn {
@@ -190,5 +253,148 @@ html, body {
     100% { 
         transform: translateY(0); 
         opacity: 1; 
+    }
+}
+
+@keyframes bounceSubtle {
+    0%, 20%, 50%, 80%, 100% {
+        transform: translateY(0);
+    }
+    40% {
+        transform: translateY(-5px);
+    }
+    60% {
+        transform: translateY(-3px);
+    }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .chat-window-tall {
+        width: calc(100vw - 24px) !important;
+        height: calc(100vh - 100px) !important;
+        bottom: 12px !important;
+        right: 12px !important;
+        left: 12px !important;
+    }
+    
+    .map-controls {
+        top: 12px;
+        right: 12px;
+    }
+    
+    .floating-card {
+        padding: 8px;
+    }
+    
+    .feature-badge {
+        bottom: 80px !important;
+        left: 12px !important;
+    }
+}
+
+@media (max-width: 480px) {
+    .ol-popup {
+        min-width: 250px;
+        max-width: calc(100vw - 40px);
+        left: -125px;
+    }
+    
+    .chat-bubble-user,
+    .chat-bubble-assistant {
+        max-width: calc(100% - 40px);
+    }
+}
+
+/* Loading States */
+.loading-shimmer {
+    background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+    background-size: 200% 100%;
+    animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+    0% {
+        background-position: -200% 0;
+    }
+    100% {
+        background-position: 200% 0;
+    }
+}
+
+/* Enhanced Button States */
+button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+    transform: none !important;
+}
+
+button:not(:disabled):hover {
+    transform: translateY(-1px);
+}
+
+button:not(:disabled):active {
+    transform: translateY(0);
+}
+
+/* Map Layer Controls Enhancement */
+.layer-control-active {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+    color: white !important;
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+/* Status Indicators */
+.status-online {
+    background-color: #10b981;
+    box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+}
+
+.status-loading {
+    background-color: #f59e0b;
+    box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
+}
+
+.status-error {
+    background-color: #ef4444;
+    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);
+}
+
+/* Utility Classes */
+.blur-backdrop {
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
+.glass-border {
+    border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.shadow-glass {
+    box-shadow: 
+        0 8px 32px 0 rgba(31, 38, 135, 0.37),
+        inset 0 1px 0 0 rgba(255, 255, 255, 0.18);
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+    .glass-effect {
+        background: rgba(31, 41, 55, 0.8);
+        border: 1px solid rgba(75, 85, 99, 0.3);
+    }
+    
+    .floating-card {
+        background: rgba(31, 41, 55, 0.9);
+        border: 1px solid rgba(75, 85, 99, 0.3);
+    }
+    
+    .ol-popup {
+        background: rgba(31, 41, 55, 0.95);
+        border: 1px solid rgba(75, 85, 99, 0.3);
+        color: #f9fafb;
+    }
+    
+    .ol-popup:after {
+        border-top-color: rgba(31, 41, 55, 0.95);
     }
 }
