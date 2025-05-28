@@ -204,7 +204,7 @@ try {
             }
         };
 
-        // Enhanced chat query handler with better building data detection
+        // Enhanced chat query handler with new combined response format
         const handleQuery = async () => {
             if (!query.trim()) return;
             
@@ -237,13 +237,34 @@ try {
                 const data = await res.json();
                 console.log("Received data from backend:", data);
                 console.log("Data type:", typeof data);
-                console.log("Is array:", Array.isArray(data));
                 
-                let responseContent;
+                let responseContent = '';
                 let foundBuildings = false;
                 
-                // IMPROVED: Better building data detection
-                if (Array.isArray(data) && data.length > 0) {
+                // NEW: Handle combined response format (text + geojson)
+                if (data && typeof data === 'object' && 'response' in data && 'geojson_data' in data) {
+                    console.log("✅ Detected combined response format");
+                    
+                    responseContent = data.response;
+                    const geojsonData = data.geojson_data;
+                    
+                    if (Array.isArray(geojsonData) && geojsonData.length > 0) {
+                        const firstItem = geojsonData[0];
+                        
+                        // Validate building data
+                        if (firstItem && typeof firstItem === 'object' && 
+                            'name' in firstItem && 'lat' in firstItem && 'lon' in firstItem && 
+                            'geometry' in firstItem && firstItem.lat !== 0 && firstItem.lon !== 0) {
+                            
+                            console.log("✓ Valid building data in combined response - updating map");
+                            setFeatures(geojsonData);
+                            updateMapFeatures(geojsonData);
+                            foundBuildings = true;
+                        }
+                    }
+                }
+                // Handle legacy array format (buildings only)
+                else if (Array.isArray(data) && data.length > 0) {
                     const firstItem = data[0];
                     console.log("First item:", firstItem);
                     
@@ -252,7 +273,7 @@ try {
                         'name' in firstItem && 'lat' in firstItem && 'lon' in firstItem && 
                         'geometry' in firstItem && firstItem.lat !== 0 && firstItem.lon !== 0) {
                         
-                        console.log("✓ Detected valid building data - updating map");
+                        console.log("✓ Detected legacy building data format - updating map");
                         setFeatures(data);
                         updateMapFeatures(data);
                         foundBuildings = true;
@@ -270,38 +291,25 @@ try {
                         
                     } else if (firstItem && firstItem.error) {
                         responseContent = `I encountered an issue: ${firstItem.error}`;
-                        
-                        // Try direct building search as fallback if query seems like a location request
-                        if (currentQuery.toLowerCase().includes('building') || 
-                            currentQuery.toLowerCase().includes('show') ||
-                            currentQuery.toLowerCase().includes('find')) {
-                            
-                            console.log("Attempting direct building search fallback...");
-                            await tryDirectBuildingSearch(currentQuery);
-                            return;
-                        }
                     } else {
                         // Handle array of strings (text responses)
                         responseContent = Array.isArray(data) ? data.join('\n') : JSON.stringify(data, null, 2);
                     }
-                } else if (data && data.response) {
-                    // Handle wrapped text responses
+                }
+                // Handle wrapped text responses
+                else if (data && data.response) {
                     responseContent = data.response;
-                } else if (data && data.error) {
+                }
+                // Handle error responses
+                else if (data && data.error) {
                     responseContent = `I encountered an issue: ${data.error}`;
-                    
-                    // Try direct building search as fallback
-                    if (currentQuery.toLowerCase().includes('building') || 
-                        currentQuery.toLowerCase().includes('show') ||
-                        currentQuery.toLowerCase().includes('find')) {
-                        
-                        console.log("Attempting direct building search fallback...");
-                        await tryDirectBuildingSearch(currentQuery);
-                        return;
-                    }
-                } else if (typeof data === 'string') {
+                }
+                // Handle plain string responses
+                else if (typeof data === 'string') {
                     responseContent = data;
-                } else {
+                }
+                // Handle other data types
+                else {
                     responseContent = JSON.stringify(data, null, 2);
                 }
                 
@@ -316,75 +324,14 @@ try {
             } catch (error) {
                 console.error("Query error:", error);
                 
-                // Try direct building search as fallback for building queries
-                if (currentQuery.toLowerCase().includes('building') || 
-                    currentQuery.toLowerCase().includes('show') ||
-                    currentQuery.toLowerCase().includes('find')) {
-                    
-                    console.log("Network error - attempting direct building search...");
-                    await tryDirectBuildingSearch(currentQuery);
-                } else {
-                    const errorMessage = {
-                        type: 'assistant',
-                        content: `Sorry, I encountered an error: ${error.message}`,
-                        timestamp: new Date()
-                    };
-                    setMessages(prev => [...prev, errorMessage]);
-                }
-            } finally {
-                setIsLoading(false);
-            }
-        };
-
-        // Direct building search fallback
-        const tryDirectBuildingSearch = async (queryText) => {
-            try {
-                console.log("Trying direct building search for:", queryText);
-                
-                // Extract location from query
-                let location = 'Amsterdam'; // default
-                const words = queryText.toLowerCase().split(' ');
-                const locationWords = ['amsterdam', 'rotterdam', 'utrecht', 'groningen', 'eindhoven', 'den haag', 'tilburg'];
-                const foundLocation = words.find(word => locationWords.includes(word));
-                if (foundLocation) {
-                    location = foundLocation;
-                }
-                
-                const directRes = await fetch('/api/buildings', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        location: location,
-                        max_features: 10
-                    })
-                });
-                
-                const directData = await directRes.json();
-                console.log("Direct search result:", directData);
-                
-                if (Array.isArray(directData) && directData.length > 0 && !directData[0].error) {
-                    console.log("✓ Direct search successful - updating map");
-                    setFeatures(directData);
-                    updateMapFeatures(directData);
-                    
-                    const assistantMessage = {
-                        type: 'assistant',
-                        content: `Found ${directData.length} buildings in ${location} using direct search! I've displayed them on the map. Click on any building for details.`,
-                        timestamp: new Date()
-                    };
-                    setMessages(prev => [...prev, assistantMessage]);
-                } else {
-                    throw new Error("Direct search also failed");
-                }
-                
-            } catch (directError) {
-                console.error("Direct search also failed:", directError);
                 const errorMessage = {
                     type: 'assistant',
-                    content: `I'm having trouble finding buildings right now. Please try again or try a different location like "Amsterdam" or "Groningen".`,
+                    content: `Sorry, I encountered an error: ${error.message}`,
                     timestamp: new Date()
                 };
                 setMessages(prev => [...prev, errorMessage]);
+            } finally {
+                setIsLoading(false);
             }
         };
 
@@ -683,7 +630,7 @@ try {
                                 <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse-slow"></div>
                                 <div>
                                     <h2 className="text-lg font-semibold text-white">Map-Aware AI Assistant</h2>
-                                    <p className="text-sm text-blue-100">Analyzing your map context</p>
+                                    <p className="text-sm text-blue-100">Agent-powered spatial analysis</p>
                                 </div>
                             </div>
                             <button 
@@ -717,7 +664,7 @@ try {
                                             <span></span>
                                             <span></span>
                                         </div>
-                                        <p className="text-xs opacity-75 mt-1">Analyzing map context...</p>
+                                        <p className="text-xs opacity-75 mt-1">Agent processing...</p>
                                     </div>
                                 </div>
                             )}
@@ -725,27 +672,33 @@ try {
                             <div ref={messagesEndRef} />
                         </div>
 
-                        {/* Enhanced Input Area with Suggestions */}
+                        {/* Enhanced Input Area with Agent-focused Suggestions */}
                         <div className="p-4 border-t border-gray-200">
                             {/* Quick Action Buttons */}
                             <div className="flex flex-wrap gap-2 mb-3">
                                 <button
-                                    onClick={() => setQuery("Analyze what's currently on the map")}
+                                    onClick={() => setQuery("Show buildings in Amsterdam")}
                                     className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded-full hover:bg-blue-200 transition-colors"
+                                >
+                                    Find Buildings
+                                </button>
+                                <button
+                                    onClick={() => setQuery("Analyze what's currently on the map")}
+                                    className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded-full hover:bg-green-200 transition-colors"
                                 >
                                     Analyze Map
                                 </button>
                                 <button
-                                    onClick={() => setQuery("What GIS concepts should I know?")}
-                                    className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded-full hover:bg-green-200 transition-colors"
-                                >
-                                    GIS Help
-                                </button>
-                                <button
-                                    onClick={() => setQuery("Show buildings in Amsterdam")}
+                                    onClick={() => setQuery("Show historic buildings in Utrecht")}
                                     className="px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded-full hover:bg-purple-200 transition-colors"
                                 >
-                                    Find Buildings
+                                    Historic Search
+                                </button>
+                                <button
+                                    onClick={() => setQuery("What is PDOK and how does it work?")}
+                                    className="px-2 py-1 text-xs bg-orange-100 text-orange-700 rounded-full hover:bg-orange-200 transition-colors"
+                                >
+                                    GIS Help
                                 </button>
                             </div>
                             
@@ -756,7 +709,7 @@ try {
                                     onChange={e => setQuery(e.target.value)}
                                     onKeyPress={handleKeyPress}
                                     className="flex-1 search-input rounded-xl px-4 py-2 text-sm focus:outline-none"
-                                    placeholder="Ask about the map, GIS, or find buildings..."
+                                    placeholder="Ask the agent to find buildings, analyze data, or answer GIS questions..."
                                     disabled={isLoading}
                                 />
                                 <button
@@ -780,7 +733,7 @@ try {
                             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                             </svg>
-                            <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-ping"></div>
+                            <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full animate-ping"></div>
                             {features.length > 0 && (
                                 <div className="absolute -bottom-2 -left-2 bg-blue-500 text-white text-xs rounded-full w-6 h-6 flex items-center justify-center">
                                     {features.length}
@@ -851,7 +804,7 @@ try {
         );
     };
 
-    console.log("Rendering Map-Aware React app");
+    console.log("Rendering Map-Aware React app with Agent Integration");
     
     if (root) {
         root.render(<App />);
