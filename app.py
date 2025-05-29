@@ -1,4 +1,4 @@
-# app.py - Map-Aware PDOK Web Map Chat Assistant - REAL DATA ONLY
+# app.py - Complete Map-Aware PDOK Web Map Chat Assistant with Enhanced Location Search
 import os
 import json
 import yaml
@@ -10,6 +10,8 @@ import statistics
 from collections import Counter
 from datetime import datetime
 
+# Import the enhanced PDOK location functionality
+from tools import find_location_coordinates, search_dutch_address_pdok, pdok_service,ContactHistoryTool,KadasterBRKTool
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
 load_dotenv()
@@ -64,35 +66,8 @@ def load_system_prompt(file_path: str = "static/system_prompt.yml") -> dict:
         print("Using default system prompt configuration")
         return {}
 
-# Basic location search tool
-@tool
-def find_location_coordinates(query: str) -> dict:
-    """
-    Searches for a location and returns its coordinates using Nominatim.
-    
-    Args:
-        query (str): The name of the location to search for (e.g., 'Groningen').
-    
-    Returns:
-        dict: Location data with name, lat, lon, and description.
-    """
-    try:
-        response = requests.get(
-            "https://nominatim.openstreetmap.org/search",
-            params={"q": query, "format": "json", "limit": 1},
-            headers={"User-Agent": "PDOK-WebMap-Chat/1.0"}
-        )
-        results = response.json()
-        if results:
-            return {
-                "name": query,
-                "lat": float(results[0]["lat"]),
-                "lon": float(results[0]["lon"]),
-                "description": results[0].get("display_name", "")
-            }
-        return {"error": f"No coordinates found for {query}"}
-    except Exception as e:
-        return {"error": f"Error finding coordinates: {str(e)}"}
+# NOTE: find_location_coordinates is now imported from pdok_location module
+# It provides enhanced Dutch location search using PDOK Locatieserver API
 
 @tool
 def analyze_current_map_features() -> dict:
@@ -110,7 +85,7 @@ def analyze_current_map_features() -> dict:
             return {
                 "message": "No features are currently displayed on the map.",
                 "feature_count": 0,
-                "suggestions": ["Try searching for buildings in a specific location like 'Amsterdam' or 'Groningen'"]
+                "suggestions": ["Try searching for buildings in a specific location like 'Amsterdam train station' or 'Utrecht Centraal'"]
             }
         
         analysis = {
@@ -292,13 +267,16 @@ def answer_map_question(question: str) -> str:
             return """WGS84 (World Geodetic System 1984) is the standard coordinate system used by GPS and most web mapping applications. It defines locations using latitude and longitude in decimal degrees. In the Netherlands, we also use RD New (EPSG:28992), which is the national coordinate system optimized for accurate measurements within Dutch borders."""
         
         elif any(term in question_lower for term in ['what is pdok', 'pdok']):
-            return """PDOK (Publieke Dienstverlening Op de Kaart) is the Dutch national spatial data infrastructure. It provides free access to geographic datasets from Dutch government organizations, including building data (BAG), topographic maps, aerial imagery, and administrative boundaries. It's the authoritative source for Dutch geographic information."""
+            return """PDOK (Publieke Dienstverlening Op de Kaart) is the Dutch national spatial data infrastructure. It provides free access to geographic datasets from Dutch government organizations, including building data (BAG), topographic maps, aerial imagery, and administrative boundaries. It's the authoritative source for Dutch geographic information. The system now uses PDOK Locatieserver API for enhanced location search."""
         
         elif any(term in question_lower for term in ['what is bag', 'buildings and addresses']):
             return """BAG (Basisregistratie Adressen en Gebouwen) is the Dutch Buildings and Addresses Database. It contains authoritative information about all buildings, addresses, and premises in the Netherlands. Each building has a unique identifier and includes details like construction year, status, area, and precise polygon geometry."""
         
+        elif any(term in question_lower for term in ['locatieserver', 'location search']):
+            return """PDOK Locatieserver is the official Dutch geocoding service that provides accurate coordinates for addresses, places, train stations, and other locations in the Netherlands. This system now uses Locatieserver API to ensure precise location finding, including proper support for train stations like 'Amsterdam Centraal' when you search for 'Amsterdam train station'."""
+        
         else:
-            return f"I can help with various map and GIS topics including coordinate systems, data formats, spatial analysis, and Dutch geographic data sources. Could you be more specific about what aspect of mapping or geography you'd like to know about?"
+            return f"I can help with various map and GIS topics including coordinate systems, data formats, spatial analysis, and Dutch geographic data sources. The system now includes enhanced location search using PDOK Locatieserver API. Could you be more specific about what aspect of mapping or geography you'd like to know about?"
         
     except Exception as e:
         return f"Error answering map question: {str(e)}"
@@ -370,14 +348,14 @@ def validate_and_fix_geometry(geometry):
         print(f"Error fixing geometry: {e}")
         return None
 
-# REAL PDOK Buildings Tool - NO MOCK DATA
+# Enhanced PDOK Buildings Tool with integrated PDOK Locatieserver location search
 class PDOKBuildingsRealTool(Tool):
-    """Real PDOK Buildings tool that ONLY uses actual PDOK WFS service - NO MOCK DATA"""
+    """Enhanced PDOK Buildings tool that uses PDOK Locatieserver for accurate location search."""
     
     name = "get_pdok_buildings_with_description"
-    description = "Get REAL building data from PDOK WFS service and return both text description and GeoJSON data for map display. This tool ONLY uses real data from the Dutch PDOK service."
+    description = "Get REAL building data from PDOK WFS service using enhanced PDOK Locatieserver API for accurate Dutch location search. Supports train stations, addresses, and place names."
     inputs = {
-        "location": {"type": "string", "description": "Location name (e.g., 'Amsterdam', 'Utrecht')"},
+        "location": {"type": "string", "description": "Location name (e.g., 'Amsterdam train station', 'Utrecht Centraal', 'Kloosterstraat 27 Ten Boer')"},
         "max_features": {"type": "integer", "description": "Maximum buildings to return (default: 20)", "nullable": True},
         "min_year": {"type": "integer", "description": "Minimum construction year", "nullable": True},
         "max_year": {"type": "integer", "description": "Maximum construction year", "nullable": True},
@@ -404,26 +382,36 @@ class PDOKBuildingsRealTool(Tool):
             self.transformer_to_rd = None
     
     def forward(self, location, max_features=20, min_year=None, max_year=None, radius_km=2.0):
-        """Get REAL buildings from PDOK and return combined text description and GeoJSON data."""
+        """Get REAL buildings from PDOK using enhanced PDOK Locatieserver location search."""
         global current_map_state
         
         try:
-            print(f"\n🏗️ === REAL PDOK BUILDINGS SEARCH ===")
+            print(f"\n🏗️ === ENHANCED PDOK BUILDINGS SEARCH ===")
             print(f"Location: {location}")
             print(f"Max features: {max_features}")
             print(f"Radius: {radius_km}km")
             
-            # Step 1: Get location coordinates
-            loc_data = find_location_coordinates(location)
+            # Step 1: Enhanced location search using PDOK Locatieserver
+            print("🔍 Using enhanced PDOK Locatieserver location search...")
+            loc_data = find_location_coordinates(location)  # Now uses PDOK Locatieserver!
             if "error" in loc_data:
                 return {
-                    "text_description": f"❌ Could not find coordinates for location: {location}. Error: {loc_data['error']}",
+                    "text_description": f"❌ Could not find location: {location}. {loc_data['error']}",
                     "geojson_data": [],
                     "error": loc_data["error"]
                 }
             
             lat, lon = loc_data["lat"], loc_data["lon"]
-            print(f"✅ Found coordinates: {lat:.6f}, {lon:.6f}")
+            print(f"✅ Enhanced search found coordinates: {lat:.6f}, {lon:.6f}")
+            print(f"✅ Location details: {loc_data.get('description', 'N/A')}")
+            
+            # Validate coordinates are in Netherlands
+            if not pdok_service.is_in_netherlands(lat, lon):
+                return {
+                    "text_description": f"❌ Location '{location}' appears to be outside the Netherlands (lat: {lat:.6f}, lon: {lon:.6f}). Please specify a Dutch location.",
+                    "geojson_data": [],
+                    "error": "Location outside Netherlands"
+                }
             
             # Step 2: Convert to RD New coordinates if transformer available
             if self.transformer_to_rd:
@@ -475,7 +463,7 @@ class PDOKBuildingsRealTool(Tool):
             
             if not raw_features:
                 return {
-                    "text_description": f"❌ No buildings found in {location} from PDOK service. Try a different location or increase the search radius.",
+                    "text_description": f"❌ No buildings found in {location} from PDOK service. The enhanced location search worked (found coordinates {lat:.6f}, {lon:.6f}), but no buildings were found in a {radius_km}km radius. Try increasing the search radius or checking a different area.",
                     "geojson_data": [],
                     "error": "No buildings found in PDOK data"
                 }
@@ -588,12 +576,12 @@ class PDOKBuildingsRealTool(Tool):
             print(f"🎉 Successfully processed {len(processed_features)} buildings from PDOK")
             
             # Step 7: Create detailed text description
-            location_name = location
+            location_name = loc_data.get('name', location)
             total_area = sum(f['properties'].get('area_m2', 0) for f in processed_features)
             years = [f['properties'].get('bouwjaar') for f in processed_features if f['properties'].get('bouwjaar')]
             
-            text_parts = [f"## Real Buildings in {location_name} (PDOK Data)"]
-            text_parts.append(f"\nI found **{len(processed_features)} real buildings** in {location_name} from the official Dutch PDOK/BAG database.")
+            text_parts = [f"## Real Buildings near {location_name} (Enhanced PDOK Search)"]
+            text_parts.append(f"\nI found **{len(processed_features)} real buildings** near {location_name} using the enhanced PDOK Locatieserver API and BAG database.")
             
             if total_area > 0:
                 text_parts.append(f"\n**Total building area**: {total_area:,.0f}m²")
@@ -623,6 +611,14 @@ class PDOKBuildingsRealTool(Tool):
             if era_parts:
                 text_parts.append(f"\n**Era breakdown**: {', '.join(era_parts)}")
             
+            # Add location details from enhanced search
+            if loc_data.get('pdok_data'):
+                pdok_info = loc_data['pdok_data']
+                if pdok_info.get('gemeente'):
+                    text_parts.append(f"\n**Municipality**: {pdok_info['gemeente']}")
+                if pdok_info.get('provincie'):
+                    text_parts.append(f"**Province**: {pdok_info['provincie']}")
+            
             # Add sample buildings
             text_parts.append(f"\n**Notable buildings include**:")
             for i, building in enumerate(processed_features[:5]):  # Show top 5
@@ -631,7 +627,7 @@ class PDOKBuildingsRealTool(Tool):
                 area = props.get('area_m2', 0)
                 text_parts.append(f"* **{building['name']}** - Built {year}, {area:.0f}m²")
             
-            text_parts.append(f"\nAll **{len(processed_features)} buildings** are displayed on the map with color coding by construction era. Click any building for detailed information.")
+            text_parts.append(f"\nAll **{len(processed_features)} buildings** are displayed on the map with color coding by construction era. The enhanced PDOK location search successfully found the exact coordinates for '{location}'.")
             
             text_description = "\n".join(text_parts)
             
@@ -658,7 +654,7 @@ class PDOKBuildingsRealTool(Tool):
             }
             
         except Exception as e:
-            error_msg = f"PDOK tool error: {str(e)}"
+            error_msg = f"Enhanced PDOK tool error: {str(e)}"
             print(f"❌ {error_msg}")
             return {
                 "text_description": f"❌ Error retrieving buildings from PDOK: {error_msg}",
@@ -668,27 +664,32 @@ class PDOKBuildingsRealTool(Tool):
 
 def create_agent_with_yaml_prompt():
     """
-    Create the map-aware agent with YAML system prompt configuration - REAL DATA ONLY.
+    Create the map-aware agent with YAML system prompt configuration and enhanced PDOK location search.
     
     Returns:
-        CodeAgent: Configured agent with YAML system prompt and ONLY real data tools
+        CodeAgent: Configured agent with YAML system prompt and enhanced location search tools
     """
     # Load system prompt from YAML file
     system_prompt_config = load_system_prompt("static/system_prompt.yml")
     
-    # Create tools - ONLY REAL DATA TOOLS, NO MOCK TOOLS
+    # Create tools - Now with enhanced PDOK location search
     tools = [
-        find_location_coordinates,
+        find_location_coordinates,        # Enhanced with PDOK Locatieserver
+        search_dutch_address_pdok,       # New specialized address search  
         analyze_current_map_features,
         get_map_context_info,
         answer_map_question,
-        PDOKBuildingsRealTool(),  # ONLY the real PDOK tool
-        DuckDuckGoSearchTool()
+        PDOKBuildingsRealTool(),         # Enhanced with better location search
+        DuckDuckGoSearchTool(),
+        pdok_service,
+        ContactHistoryTool,
+        KadasterBRKTool
+        # Add more tools as needed
     ]
-    
-    print("🔧 Creating agent with REAL DATA TOOLS ONLY:")
-    for tool in tools:
-        print(f"  ✅ {tool.name}: {tool.description[:80]}...")
+
+    print("🔧 Creating agent with ENHANCED PDOK TOOLS:")
+    #for tool in tools:
+        #print(f"  ✅ {tool.name}: {tool.description[:80]}...")
     
     # Create agent with loaded system prompt
     if system_prompt_config:
@@ -717,7 +718,7 @@ def create_agent_with_yaml_prompt():
     
     return agent
 
-# Initialize the agent with YAML system prompt - REAL DATA ONLY
+# Initialize the agent with enhanced PDOK location search
 agent = create_agent_with_yaml_prompt()
 
 # Flask routes
@@ -728,11 +729,11 @@ def index():
 
 @app.route('/api/query', methods=['POST'])
 def query():
-    """Handle chat queries using the smolagent with YAML system prompt - REAL DATA ONLY."""
+    """Handle chat queries using the smolagent with enhanced PDOK location search."""
     global current_map_state
     
     print("\n" + "="*60)
-    print("RECEIVED MAP-AWARE QUERY REQUEST - REAL PDOK DATA ONLY")
+    print("RECEIVED MAP-AWARE QUERY REQUEST - ENHANCED PDOK LOCATION SEARCH")
     print("="*60)
     
     data = request.json
@@ -751,7 +752,7 @@ def query():
     current_map_state["zoom"] = map_zoom
     
     try:
-        print("🏗️ Running map-aware agent with REAL PDOK DATA ONLY...")
+        print("🏗️ Running enhanced map-aware agent with PDOK Locatieserver...")
         
         # Create context-aware prompt
         context_prompt = f"""
@@ -762,10 +763,14 @@ Current map context:
 - Zoom level: {map_zoom}
 - Features on map: {len(current_features)}
 
-IMPORTANT: First determine if this is a GEOGRAPHIC query (asking to show/find/display locations or buildings) or a GENERAL question (about capabilities, GIS concepts, etc.).
+IMPORTANT: The system now uses enhanced PDOK Locatieserver API for accurate Dutch location search.
 
-- For GEOGRAPHIC queries: Use tools and return JSON with text_description and geojson_data
-- For GENERAL questions: Simply answer the question with plain text using final_answer()
+- Train stations like "Amsterdam train station" will now correctly find Amsterdam Centraal
+- Addresses like "Kloosterstraat 27 Ten Boer" will be found accurately
+- All Dutch locations, municipalities, and places are properly supported
+
+For GEOGRAPHIC queries: Use tools and return JSON with text_description and geojson_data
+For GENERAL questions: Simply answer the question with plain text using final_answer()
 
 Please respond to the user's query appropriately based on the query type.
 """
@@ -825,7 +830,7 @@ Please respond to the user's query appropriately based on the query type.
                                     processed_features.append(feature)
                         
                         if processed_features:
-                            print(f"🗺️ Processed {len(processed_features)} valid REAL features for map display")
+                            print(f"🗺️ Processed {len(processed_features)} valid features for map display")
                             
                             # Update map state
                             current_map_state["features"] = processed_features
@@ -854,7 +859,7 @@ Please respond to the user's query appropriately based on the query type.
         text_description = None
         
         if hasattr(agent, 'logs') or hasattr(agent, 'memory'):
-            print("🔍 Searching agent execution history for REAL building data...")
+            print("🔍 Searching agent execution history for building data...")
             
             # Try both old logs and new memory.steps
             log_sources = []
@@ -893,7 +898,7 @@ Please respond to the user's query appropriately based on the query type.
                             if 'text_description' in result_data and 'geojson_data' in result_data:
                                 text_description = result_data['text_description']
                                 building_data = result_data['geojson_data']
-                                print(f"🏗️  ✅ Found REAL combined response in action.result")
+                                print(f"🏗️  ✅ Found combined response in action.result")
                                 break
                     
                     # Method 5: Check individual tool calls
@@ -908,7 +913,7 @@ Please respond to the user's query appropriately based on the query type.
                                 
                                 text_description = tool_result['text_description']
                                 building_data = tool_result['geojson_data']
-                                print(f"🏗️  ✅ Found REAL combined response in tool call result")
+                                print(f"🏗️  ✅ Found combined response in tool call result")
                                 break
                             
                             # Legacy format check (array of buildings)
@@ -922,8 +927,8 @@ Please respond to the user's query appropriately based on the query type.
                                     # Check that this is NOT mock data
                                     if not any('mock' in str(first_item).lower() for first_item in tool_result):
                                         building_data = tool_result
-                                        text_description = f"Found {len(building_data)} real buildings from PDOK and displayed them on the map."
-                                        print(f"🏗️  ✅ Found REAL building data format: {len(building_data)} buildings")
+                                        text_description = f"Found {len(building_data)} real buildings from enhanced PDOK search and displayed them on the map."
+                                        print(f"🏗️  ✅ Found building data format: {len(building_data)} buildings")
                                         break
                     
                     if building_data and text_description:
@@ -934,7 +939,7 @@ Please respond to the user's query appropriately based on the query type.
         
         # If we found combined data, return it properly formatted
         if building_data and text_description:
-            print(f"🗺️  Processing REAL combined response with {len(building_data) if isinstance(building_data, list) else 'unknown'} buildings")
+            print(f"🗺️ Processing combined response with {len(building_data) if isinstance(building_data, list) else 'unknown'} buildings")
             
             # Validate and serialize building data
             if isinstance(building_data, list):
@@ -965,7 +970,7 @@ Please respond to the user's query appropriately based on the query type.
                         continue
                 
                 if serialized_buildings:
-                    print(f"✅ Returning REAL combined response: text + {len(serialized_buildings)} buildings")
+                    print(f"✅ Returning enhanced combined response: text + {len(serialized_buildings)} buildings")
                     
                     current_map_state["features"] = serialized_buildings
                     current_map_state["last_updated"] = datetime.now().isoformat()
@@ -980,7 +985,7 @@ Please respond to the user's query appropriately based on the query type.
         return jsonify({"response": str(result_text)})
         
     except Exception as e:
-        error_msg = f"Map-aware agent error: {str(e)}"
+        error_msg = f"Enhanced map-aware agent error: {str(e)}"
         print(f"❌ ERROR: {error_msg}")
         print("="*60 + "\n")
         return jsonify({"error": error_msg})
@@ -1000,7 +1005,7 @@ def reload_system_prompt():
         agent = create_agent_with_yaml_prompt()
         return jsonify({
             "success": True,
-            "message": "System prompt reloaded successfully with REAL DATA TOOLS ONLY"
+            "message": "System prompt reloaded successfully with ENHANCED PDOK LOCATIESERVER INTEGRATION"
         })
     except Exception as e:
         error_msg = f"Error reloading system prompt: {str(e)}"
@@ -1010,24 +1015,68 @@ def reload_system_prompt():
             "error": error_msg
         })
 
+@app.route('/api/test-location', methods=['POST'])
+def test_location_search():
+    """Test endpoint for the enhanced location search."""
+    data = request.json
+    query = data.get('query', '')
+    
+    if not query:
+        return jsonify({"error": "No query provided"})
+    
+    try:
+        print(f"🧪 Testing location search for: '{query}'")
+        result = find_location_coordinates(query)
+        
+        return jsonify({
+            "query": query,
+            "result": result,
+            "success": not result.get('error'),
+            "coordinates": [result.get('lat', 0), result.get('lon', 0)] if not result.get('error') else None
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "query": query,
+            "error": str(e),
+            "success": False
+        })
+
 if __name__ == '__main__':
-    print("🚀 Starting Map-Aware Flask server - REAL PDOK DATA ONLY")
-    print("="*60)
-    print("New capabilities:")
+    print("🚀 Starting Enhanced Map-Aware Flask server with PDOK Locatieserver Integration")
+    print("="*80)
+    print("NEW ENHANCED CAPABILITIES:")
+    print("  ✅ PDOK Locatieserver API integration for accurate Dutch location search")
+    print("  ✅ Train station search: 'Amsterdam train station' → Amsterdam Centraal (52.3791, 4.8980)")
+    print("  ✅ Address search: 'Kloosterstraat 27 Ten Boer' → exact coordinates")
+    print("  ✅ Enhanced location scoring and result ranking")
+    print("  ✅ Netherlands boundary validation")
+    print("  ✅ Detailed location metadata (municipality, province, postal code)")
     print("  ✅ YAML system prompt loading from static/system_prompt.yml")
     print("  ✅ Combined text + GeoJSON responses")
     print("  ✅ REAL PDOK building data from Dutch national database")
-    print("  ✅ Enhanced spatial analysis")
-    print("  ✅ Context-aware responses")
+    print("  ✅ Enhanced spatial analysis and context-aware responses")
     print("  ✅ Hot-reload system prompt endpoint: POST /api/reload-prompt")
+    print("  ✅ Location test endpoint: POST /api/test-location")
     print("  ❌ NO MOCK DATA - REAL DATA ONLY!")
-    print("\nSystem prompt file:", "static/system_prompt.yml")
     
-    # Check if system prompt file exists
+    print("\nLOCATION SEARCH IMPROVEMENTS:")
+    print("  🚂 Train stations: Amsterdam/Rotterdam/Utrecht/Den Haag Centraal")
+    print("  🏠 Addresses: Full Dutch address support via PDOK Locatieserver")
+    print("  🏛️ Municipalities: All Dutch gemeenten supported")
+    print("  📮 Postal codes: Complete Dutch postal code database")
+    print("  🗺️ Coordinate validation: Ensures results are within Netherlands")
+    
+    # Check if required files exist
     if os.path.exists("static/system_prompt.yml"):
         print("✅ System prompt file found")
     else:
         print("⚠️ System prompt file not found - will use defaults")
+    
+    if os.path.exists("pdok_location.py"):
+        print("✅ PDOK location module found")
+    else:
+        print("❌ PDOK location module (pdok_location.py) not found - please create it!")
     
     # Check for required dependencies
     try:
@@ -1036,10 +1085,31 @@ if __name__ == '__main__':
     except ImportError:
         print("⚠️ PyProj not available - install with: pip install pyproj")
     
-    print(f"\n🔧 Available tools (REAL DATA ONLY):")
-    # if agent:
-    #     for tool in agent.tools:
-    #         print(f"  ✅ {tool.name}: {tool.description[:80]}...")
+    print(f"\n🔧 AVAILABLE TOOLS (ENHANCED LOCATION SEARCH):")
+    print(f"  ✅ find_location_coordinates: Enhanced PDOK Locatieserver integration")
+    print(f"  ✅ search_dutch_address_pdok: Specialized address search") 
+    print(f"  ✅ analyze_current_map_features: Map analysis and statistics")
+    print(f"  ✅ get_map_context_info: Current map context information")
+    print(f"  ✅ answer_map_question: GIS and mapping knowledge")
+    print(f"  ✅ PDOKBuildingsRealTool: Real building data with enhanced location search")
+    print(f"  ✅ DuckDuckGoSearchTool: Web search capability")
     
-    print("\n" + "="*60)
+    print("\n" + "="*80)
+    print("🎯 TEST THE ENHANCED LOCATION SEARCH WITH QUERIES LIKE:")
+    print("  • 'Show me buildings around Amsterdam train station'")
+    print("  • 'Find buildings near Rotterdam Centraal'") 
+    print("  • 'Buildings in Utrecht station area'")
+    print("  • 'Show buildings at Kloosterstraat 27 Ten Boer'")
+    print("  • 'Find buildings in Den Haag Centraal area'")
+    print("  • 'Buildings near Groningen station'")
+    print("="*80)
+    
+    print(f"\n🌐 Server endpoints:")
+    print(f"  📱 Main app: http://localhost:5000")
+    print(f"  🤖 Chat API: POST /api/query")
+    print(f"  🗺️ Map state: GET /api/map-state") 
+    print(f"  🔄 Reload prompt: POST /api/reload-prompt")
+    print(f"  🧪 Test location: POST /api/test-location")
+    print()
+    
     app.run(debug=True, port=5000)

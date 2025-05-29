@@ -1,4 +1,4 @@
-console.log("Loading Map-Aware PDOK Chat Assistant");
+console.log("Loading Map-Aware PDOK Chat Assistant - Fixed Layout");
 
 try {
     const { useState, useEffect, useRef, useCallback } = React;
@@ -7,7 +7,7 @@ try {
     const root = ReactDOM.createRoot ? ReactDOM.createRoot(container) : null;
 
     const App = () => {
-        console.log("Initializing Map-Aware React component");
+        console.log("Initializing Map-Aware React component with fixed layout");
         
         // State management
         const [query, setQuery] = useState('');
@@ -42,7 +42,7 @@ try {
 
         // Initialize OpenLayers map
         useEffect(() => {
-            console.log("Setting up Map-Aware OpenLayers map");
+            console.log("Setting up Map-Aware OpenLayers map with fixed controls");
             try {
                 // Base layers
                 const osmLayer = new ol.layer.Tile({
@@ -58,13 +58,20 @@ try {
                     visible: mapView === 'satellite'
                 });
 
+                // Create controls array manually to avoid ol.control.defaults issue
+                const controls = [
+                    new ol.control.Zoom(),
+                    new ol.control.Attribution()
+                ];
+
                 mapInstance.current = new ol.Map({
                     target: mapRef.current,
                     layers: [osmLayer, satelliteLayer],
                     view: new ol.View({
                         center: ol.proj.fromLonLat(mapCenter),
                         zoom: mapZoom
-                    })
+                    }),
+                    controls: controls
                 });
 
                 // Map movement listeners for context awareness
@@ -579,7 +586,7 @@ try {
                 {/* Map Container */}
                 <div ref={mapRef} className="h-full w-full"></div>
                 
-                {/* Map Controls - Top Right */}
+                {/* FIXED: Map Controls - Top Right (no change needed) */}
                 <div className="absolute top-4 right-4 z-40">
                     <div className="floating-card p-2">
                         <div className="flex space-x-2">
@@ -607,8 +614,8 @@ try {
                     </div>
                 </div>
 
-                {/* Map Context Info - Top Left */}
-                <div className="absolute top-4 left-4 z-40">
+                {/* FIXED: Map Context Info - Moved down to avoid zoom controls */}
+                <div className="absolute top-20 left-4 z-40 map-context-info">
                     <div className="floating-card p-3">
                         <div className="text-sm text-gray-700">
                             <p className="font-medium">Map Context</p>
@@ -743,58 +750,62 @@ try {
                     </button>
                 )}
 
-                {/* Enhanced Feature Statistics Badge */}
+                {/* FIXED: Map Statistics - Positioned to avoid overlaps */}
                 {features.length > 0 && (
-                    <div className="fixed bottom-20 left-6 floating-card px-4 py-3 z-40 max-w-xs">
-                        <div className="text-sm">
-                            <p className="font-medium text-gray-800 mb-1">Map Statistics</p>
-                            <p className="text-gray-600">{features.length} features displayed</p>
-                            {(() => {
-                                const years = features
-                                    .map(f => f.properties?.bouwjaar)
-                                    .filter(year => year && !isNaN(year));
-                                
-                                const totalArea = features
-                                    .reduce((sum, f) => sum + (f.properties?.area_m2 || 0), 0);
-                                
-                                if (years.length > 0) {
-                                    const avgYear = Math.round(years.reduce((sum, year) => sum + year, 0) / years.length);
-                                    return (
-                                        <>
-                                            <p className="text-gray-600">Avg. year: {avgYear}</p>
-                                            {totalArea > 0 && (
-                                                <p className="text-gray-600">Total area: {Math.round(totalArea).toLocaleString()}m²</p>
-                                            )}
-                                        </>
-                                    );
-                                }
-                                return null;
-                            })()}
+                    <div className="map-statistics">
+                        <div className="floating-card px-4 py-3 max-w-xs">
+                            <div className="text-sm">
+                                <p className="font-medium text-gray-800 mb-1">Map Statistics</p>
+                                <p className="text-gray-600">{features.length} features displayed</p>
+                                {(() => {
+                                    const years = features
+                                        .map(f => f.properties?.bouwjaar)
+                                        .filter(year => year && !isNaN(year));
+                                    
+                                    const totalArea = features
+                                        .reduce((sum, f) => sum + (f.properties?.area_m2 || 0), 0);
+                                    
+                                    if (years.length > 0) {
+                                        const avgYear = Math.round(years.reduce((sum, year) => sum + year, 0) / years.length);
+                                        return (
+                                            <>
+                                                <p className="text-gray-600">Avg. year: {avgYear}</p>
+                                                {totalArea > 0 && (
+                                                    <p className="text-gray-600">Total area: {Math.round(totalArea).toLocaleString()}m²</p>
+                                                )}
+                                            </>
+                                        );
+                                    }
+                                    return null;
+                                })()}
+                            </div>
                         </div>
                     </div>
                 )}
 
-                {/* Legend for Building Colors */}
+                {/* FIXED: Legend for Building Colors - Positioned to avoid Map Statistics */}
                 {features.some(f => f.properties?.bouwjaar) && (
-                    <div className="fixed bottom-4 left-6 floating-card px-3 py-2 z-40">
-                        <div className="text-xs">
-                            <p className="font-medium text-gray-800 mb-2">Building Age Legend</p>
-                            <div className="space-y-1">
-                                <div className="flex items-center space-x-2">
-                                    <div className="w-3 h-3 bg-red-800 rounded"></div>
-                                    <span className="text-gray-600">Historic (pre-1900)</span>
-                                </div>
-                                <div className="flex items-center space-x-2">
-                                    <div className="w-3 h-3 bg-orange-500 rounded"></div>
-                                    <span className="text-gray-600">Early Modern (1900-1950)</span>
-                                </div>
-                                <div className="flex items-center space-x-2">
-                                    <div className="w-3 h-3 bg-green-500 rounded"></div>
-                                    <span className="text-gray-600">Mid-Century (1950-2000)</span>
-                                </div>
-                                <div className="flex items-center space-x-2">
-                                    <div className="w-3 h-3 bg-blue-500 rounded"></div>
-                                    <span className="text-gray-600">Contemporary (2000+)</span>
+                    <div className="building-legend">
+                        <div className="floating-card px-3 py-2">
+                            <div className="text-xs">
+                                <p className="font-medium text-gray-800 mb-2">Building Age Legend</p>
+                                <div className="space-y-1">
+                                    <div className="flex items-center space-x-2">
+                                        <div className="w-3 h-3 bg-red-800 rounded"></div>
+                                        <span className="text-gray-600">Historic (pre-1900)</span>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                        <div className="w-3 h-3 bg-orange-500 rounded"></div>
+                                        <span className="text-gray-600">Early Modern (1900-1950)</span>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                        <div className="w-3 h-3 bg-green-500 rounded"></div>
+                                        <span className="text-gray-600">Mid-Century (1950-2000)</span>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                        <div className="w-3 h-3 bg-blue-500 rounded"></div>
+                                        <span className="text-gray-600">Contemporary (2000+)</span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -804,7 +815,7 @@ try {
         );
     };
 
-    console.log("Rendering Map-Aware React app with Agent Integration");
+    console.log("Rendering Map-Aware React app with Fixed Layout");
     
     if (root) {
         root.render(<App />);
