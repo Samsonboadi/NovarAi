@@ -1,6 +1,7 @@
-# app.py - Map-Aware PDOK Web Map Chat Assistant
+# app.py - Map-Aware PDOK Web Map Chat Assistant - REAL DATA ONLY
 import os
 import json
+import yaml
 import requests
 from flask import Flask, request, jsonify, render_template
 from dotenv import load_dotenv
@@ -34,6 +35,34 @@ current_map_state = {
     "last_updated": None,
     "statistics": {}
 }
+
+def load_system_prompt(file_path: str = "static/system_prompt.yml") -> dict:
+    """
+    Load system prompt from YAML file.
+    
+    Args:
+        file_path: Path to the YAML file
+        
+    Returns:
+        Dictionary with system prompt configuration
+    """
+    try:
+        with open(file_path, 'r', encoding='utf-8') as file:
+            config = yaml.safe_load(file)
+        print(f"✅ Successfully loaded system prompt from {file_path}")
+        return config
+    except FileNotFoundError:
+        print(f"❌ System prompt file not found: {file_path}")
+        print("Using default system prompt configuration")
+        return {}
+    except yaml.YAMLError as e:
+        print(f"❌ Error parsing YAML file {file_path}: {e}")
+        print("Using default system prompt configuration")
+        return {}
+    except Exception as e:
+        print(f"❌ Error loading system prompt from {file_path}: {e}")
+        print("Using default system prompt configuration")
+        return {}
 
 # Basic location search tool
 @tool
@@ -268,27 +297,6 @@ def answer_map_question(question: str) -> str:
         elif any(term in question_lower for term in ['what is bag', 'buildings and addresses']):
             return """BAG (Basisregistratie Adressen en Gebouwen) is the Dutch Buildings and Addresses Database. It contains authoritative information about all buildings, addresses, and premises in the Netherlands. Each building has a unique identifier and includes details like construction year, status, area, and precise polygon geometry."""
         
-        elif any(term in question_lower for term in ['projection', 'coordinate projection']):
-            return """Map projections transform the curved surface of the Earth onto a flat map. Different projections preserve different properties (area, distance, direction). Web maps typically use Web Mercator (EPSG:3857), while the Netherlands uses RD New (EPSG:28992) for official mapping due to its accuracy within Dutch borders."""
-        
-        elif any(term in question_lower for term in ['openlayers', 'leaflet', 'web mapping']):
-            return """OpenLayers and Leaflet are popular JavaScript libraries for creating interactive web maps. OpenLayers is more feature-rich and handles complex GIS operations, while Leaflet is lighter and easier to use. Both can display various data formats like GeoJSON, WMS, and vector tiles."""
-        
-        elif any(term in question_lower for term in ['geojson', 'data format']):
-            return """GeoJSON is a format for encoding geographic data structures using JSON. It supports points, lines, polygons, and multi-geometries, along with properties for each feature. It's widely used in web mapping because it's human-readable and easily parsed by JavaScript."""
-        
-        elif any(term in question_lower for term in ['remote sensing', 'satellite']):
-            return """Remote sensing involves acquiring information about Earth's surface from satellites or aircraft. Common applications include land use mapping, environmental monitoring, urban planning, and change detection. Satellite imagery provides different spectral bands useful for various analyses."""
-        
-        elif any(term in question_lower for term in ['spatial analysis', 'spatial query']):
-            return """Spatial analysis examines the locations, attributes, and relationships of features in spatial data. Common operations include buffering, overlay analysis, proximity analysis, and spatial statistics. It helps answer questions like 'what's near what' and 'where does it occur'."""
-        
-        elif any(term in question_lower for term in ['scale', 'map scale']):
-            return """Map scale represents the ratio between distance on a map and distance on the ground. Large scale maps (1:1,000) show small areas in detail, while small scale maps (1:1,000,000) show large areas with less detail. Web maps use zoom levels instead of traditional scales."""
-        
-        elif any(term in question_lower for term in ['topology', 'spatial relationship']):
-            return """Topology in GIS describes spatial relationships between features - how they connect, overlap, or relate spatially. Examples include adjacency (features sharing boundaries), containment (one feature inside another), and connectivity (features linked together)."""
-        
         else:
             return f"I can help with various map and GIS topics including coordinate systems, data formats, spatial analysis, and Dutch geographic data sources. Could you be more specific about what aspect of mapping or geography you'd like to know about?"
         
@@ -362,20 +370,18 @@ def validate_and_fix_geometry(geometry):
         print(f"Error fixing geometry: {e}")
         return None
 
-# Enhanced PDOK Buildings Tool with Combined Text and GeoJSON Response
-class PDOKBuildingsAdvancedTool(Tool):
-    """Advanced PDOK Buildings tool that returns both text description and GeoJSON data"""
+# REAL PDOK Buildings Tool - NO MOCK DATA
+class PDOKBuildingsRealTool(Tool):
+    """Real PDOK Buildings tool that ONLY uses actual PDOK WFS service - NO MOCK DATA"""
     
     name = "get_pdok_buildings_with_description"
-    description = "Get detailed building data from PDOK WFS service and return both text description and GeoJSON data for map display."
+    description = "Get REAL building data from PDOK WFS service and return both text description and GeoJSON data for map display. This tool ONLY uses real data from the Dutch PDOK service."
     inputs = {
-        "location": {"type": "string", "description": "Location name", "nullable": True},
-        "bbox": {"type": "array", "description": "Bounding box in RD New coordinates", "nullable": True},
-        "max_features": {"type": "integer", "description": "Maximum buildings to return", "nullable": True},
+        "location": {"type": "string", "description": "Location name (e.g., 'Amsterdam', 'Utrecht')"},
+        "max_features": {"type": "integer", "description": "Maximum buildings to return (default: 20)", "nullable": True},
         "min_year": {"type": "integer", "description": "Minimum construction year", "nullable": True},
         "max_year": {"type": "integer", "description": "Maximum construction year", "nullable": True},
-        "min_area": {"type": "integer", "description": "Minimum building area in m²", "nullable": True},
-        "radius_km": {"type": "number", "description": "Search radius in kilometers", "nullable": True}
+        "radius_km": {"type": "number", "description": "Search radius in kilometers (default: 2.0)", "nullable": True}
     }
     output_type = "object"
     is_initialized = True
@@ -391,52 +397,49 @@ class PDOKBuildingsAdvancedTool(Tool):
             import pyproj
             self.transformer_to_wgs84 = pyproj.Transformer.from_crs("EPSG:28992", "EPSG:4326", always_xy=True)
             self.transformer_to_rd = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:28992", always_xy=True)
+            print("✅ PyProj coordinate transformers initialized")
         except ImportError:
-            print("Warning: pyproj not available")
+            print("❌ Warning: pyproj not available - coordinate transformation disabled")
             self.transformer_to_wgs84 = None
             self.transformer_to_rd = None
     
-    def forward(self, location=None, bbox=None, max_features=10, min_year=None, max_year=None, min_area=None, radius_km=1.0):
-        """Get buildings and return combined text description and GeoJSON data."""
+    def forward(self, location, max_features=20, min_year=None, max_year=None, radius_km=2.0):
+        """Get REAL buildings from PDOK and return combined text description and GeoJSON data."""
         global current_map_state
         
         try:
-            print(f"\n=== PDOK BUILDINGS TOOL WITH DESCRIPTION ===")
+            print(f"\n🏗️ === REAL PDOK BUILDINGS SEARCH ===")
+            print(f"Location: {location}")
+            print(f"Max features: {max_features}")
+            print(f"Radius: {radius_km}km")
             
-            if location and not bbox:
-                loc_data = find_location_coordinates(location)
-                if "error" in loc_data:
-                    return {
-                        "text_description": f"Could not find coordinates for location: {location}",
-                        "geojson_data": None,
-                        "error": loc_data["error"]
-                    }
-                
-                lat, lon = loc_data["lat"], loc_data["lon"]
-                
-                if self.transformer_to_rd:
-                    center_x, center_y = self.transformer_to_rd.transform(lon, lat)
-                    radius_m = radius_km * 1000
-                    bbox = [center_x - radius_m, center_y - radius_m, center_x + radius_m, center_y + radius_m]
-                    use_rd_coordinates = True
-                else:
-                    buffer = radius_km * 0.01
-                    bbox = [lon - buffer, lat - buffer, lon + buffer, lat + buffer]
-                    use_rd_coordinates = False
-                
-                # Update map center
-                current_map_state["center"] = [lon, lat]
-            else:
-                use_rd_coordinates = True if self.transformer_to_rd else False
-            
-            if not bbox:
+            # Step 1: Get location coordinates
+            loc_data = find_location_coordinates(location)
+            if "error" in loc_data:
                 return {
-                    "text_description": "Must provide either location or bbox parameter",
-                    "geojson_data": None,
-                    "error": "Missing location or bbox"
+                    "text_description": f"❌ Could not find coordinates for location: {location}. Error: {loc_data['error']}",
+                    "geojson_data": [],
+                    "error": loc_data["error"]
                 }
             
-            # Build request
+            lat, lon = loc_data["lat"], loc_data["lon"]
+            print(f"✅ Found coordinates: {lat:.6f}, {lon:.6f}")
+            
+            # Step 2: Convert to RD New coordinates if transformer available
+            if self.transformer_to_rd:
+                center_x, center_y = self.transformer_to_rd.transform(lon, lat)
+                radius_m = radius_km * 1000
+                bbox = [center_x - radius_m, center_y - radius_m, center_x + radius_m, center_y + radius_m]
+                use_rd_coordinates = True
+                print(f"✅ Converted to RD New: {center_x:.2f}, {center_y:.2f}")
+            else:
+                # Fallback to WGS84 bounding box
+                buffer = radius_km * 0.01  # Rough conversion
+                bbox = [lon - buffer, lat - buffer, lon + buffer, lat + buffer]
+                use_rd_coordinates = False
+                print("⚠️ Using WGS84 coordinates (less accurate)")
+            
+            # Step 3: Build CQL filters
             cql_filters = []
             if min_year:
                 cql_filters.append(f"bouwjaar >= {min_year}")
@@ -444,9 +447,13 @@ class PDOKBuildingsAdvancedTool(Tool):
                 cql_filters.append(f"bouwjaar <= {max_year}")
             cql_filter = " AND ".join(cql_filters) if cql_filters else None
             
+            # Step 4: Build PDOK WFS request
             params = {
-                'service': 'WFS', 'version': self.version, 'request': 'GetFeature',
-                'typeName': self.typename, 'outputFormat': 'application/json',
+                'service': 'WFS',
+                'version': self.version,
+                'request': 'GetFeature',
+                'typeName': self.typename,
+                'outputFormat': 'application/json',
                 'count': max_features,
                 'srsName': self.srs if use_rd_coordinates else 'EPSG:4326',
                 'bbox': f"{bbox[0]},{bbox[1]},{bbox[2]},{bbox[3]},{self.srs if use_rd_coordinates else 'EPSG:4326'}"
@@ -454,24 +461,26 @@ class PDOKBuildingsAdvancedTool(Tool):
             if cql_filter:
                 params['cql_filter'] = cql_filter
             
+            print(f"🌐 Making PDOK WFS request...")
+            print(f"URL: {self.base_url}")
+            print(f"Bbox: {bbox}")
+            
+            # Step 5: Make the request to PDOK
             response = requests.get(self.base_url, params=params, timeout=30)
             response.raise_for_status()
             data = response.json()
             raw_features = data.get('features', [])
             
+            print(f"📦 PDOK returned {len(raw_features)} raw features")
+            
             if not raw_features:
-                from MockBuildingTool import MockBuildingTool
-                mock_tool = MockBuildingTool()
-                mock_result = mock_tool.forward(location or "Netherlands", max_features)
-                
-                # Create combined response
-                text_desc = f"Found {len(mock_result)} sample buildings in {location or 'Netherlands'} (using sample data)"
                 return {
-                    "text_description": text_desc,
-                    "geojson_data": mock_result
+                    "text_description": f"❌ No buildings found in {location} from PDOK service. Try a different location or increase the search radius.",
+                    "geojson_data": [],
+                    "error": "No buildings found in PDOK data"
                 }
             
-            # Process features
+            # Step 6: Process features
             processed_features = []
             for i, feature in enumerate(raw_features):
                 try:
@@ -479,12 +488,15 @@ class PDOKBuildingsAdvancedTool(Tool):
                     geometry = feature.get('geometry', {})
                     
                     if not geometry:
+                        print(f"⚠️ Feature {i+1}: No geometry, skipping")
                         continue
                     
                     validated_geometry = validate_and_fix_geometry(geometry)
                     if not validated_geometry:
+                        print(f"⚠️ Feature {i+1}: Invalid geometry, skipping")
                         continue
                     
+                    # Extract building information
                     building_id = props.get('identificatie', f'Building_{i+1}')
                     building_year = props.get('bouwjaar', 'Unknown')
                     building_status = props.get('status', 'Unknown')
@@ -499,20 +511,21 @@ class PDOKBuildingsAdvancedTool(Tool):
                             avg_lon = sum(coord[0] for coord in coords) / len(coords)
                             avg_lat = sum(coord[1] for coord in coords) / len(coords)
                             
-                            # Shoelace formula for area
+                            # Shoelace formula for area calculation
                             n = len(coords)
                             area_m2 = 0.5 * abs(sum(coords[i][0] * coords[(i + 1) % n][1] - 
                                                    coords[(i + 1) % n][0] * coords[i][1] 
                                                    for i in range(n)))
                     elif validated_geometry['type'] == 'Point':
                         avg_lon, avg_lat = validated_geometry['coordinates']
-                        area_m2 = 50
+                        area_m2 = 50  # Default area for points
                     
                     # Convert to WGS84 if needed
                     if self.transformer_to_wgs84 and use_rd_coordinates and avg_lon != 0 and avg_lat != 0:
                         wgs84_coords = self.transformer_to_wgs84.transform(avg_lon, avg_lat)
                         avg_lon, avg_lat = wgs84_coords
                         
+                        # Convert polygon coordinates to WGS84
                         if validated_geometry['type'] == 'Polygon':
                             wgs84_coords_list = []
                             for coord in validated_geometry['coordinates'][0]:
@@ -520,13 +533,12 @@ class PDOKBuildingsAdvancedTool(Tool):
                                 wgs84_coords_list.append([wgs84_coord[0], wgs84_coord[1]])
                             validated_geometry['coordinates'] = [wgs84_coords_list]
                     
-                    if min_area and area_m2 < min_area:
-                        continue
-                    
+                    # Create building name
                     building_name = f"Building {building_id[-6:]}" if len(building_id) > 6 else building_id
                     if building_year and building_year != 'Unknown':
                         building_name += f" ({building_year})"
                     
+                    # Create description
                     desc_parts = []
                     if building_year and building_year != 'Unknown':
                         desc_parts.append(f"Built: {building_year}")
@@ -539,8 +551,9 @@ class PDOKBuildingsAdvancedTool(Tool):
                     if num_units:
                         desc_parts.append(f"Units: {num_units}")
                     
-                    description = " | ".join(desc_parts) if desc_parts else "Dutch building from PDOK database"
+                    description = " | ".join(desc_parts) if desc_parts else "Dutch building from PDOK BAG database"
                     
+                    # Create enhanced feature
                     enhanced_feature = {
                         "name": building_name,
                         "lat": float(avg_lat) if avg_lat != 0 else 0.0,
@@ -556,38 +569,40 @@ class PDOKBuildingsAdvancedTool(Tool):
                     }
                     
                     processed_features.append(enhanced_feature)
+                    print(f"✅ Processed feature {i+1}: {building_name}")
                     
                 except Exception as feature_error:
-                    print(f"Error processing feature {i}: {feature_error}")
+                    print(f"❌ Error processing feature {i+1}: {feature_error}")
                     continue
             
             if not processed_features:
-                mock_tool = MockBuildingTool()
-                mock_result = mock_tool.forward(location or "Netherlands", max_features)
-                
-                text_desc = f"Found {len(mock_result)} sample buildings in {location or 'Netherlands'} (using sample data)"
                 return {
-                    "text_description": text_desc,
-                    "geojson_data": mock_result
+                    "text_description": f"❌ No valid buildings could be processed from PDOK data for {location}. All features had invalid geometry or coordinates.",
+                    "geojson_data": [],
+                    "error": "No valid buildings processed"
                 }
             
+            # Sort by area (largest first)
             processed_features.sort(key=lambda x: x['properties'].get('area_m2', 0), reverse=True)
             
-            # Create text description
-            location_name = location or "specified area"
+            print(f"🎉 Successfully processed {len(processed_features)} buildings from PDOK")
+            
+            # Step 7: Create detailed text description
+            location_name = location
             total_area = sum(f['properties'].get('area_m2', 0) for f in processed_features)
             years = [f['properties'].get('bouwjaar') for f in processed_features if f['properties'].get('bouwjaar')]
             
-            text_parts = [f"Found {len(processed_features)} buildings in {location_name}"]
+            text_parts = [f"## Real Buildings in {location_name} (PDOK Data)"]
+            text_parts.append(f"\nI found **{len(processed_features)} real buildings** in {location_name} from the official Dutch PDOK/BAG database.")
             
             if total_area > 0:
-                text_parts.append(f"Total building area: {total_area:,.0f}m²")
+                text_parts.append(f"\n**Total building area**: {total_area:,.0f}m²")
             
             if years:
                 avg_year = sum(years) / len(years)
                 min_year_found = min(years)
                 max_year_found = max(years)
-                text_parts.append(f"Construction years range from {min_year_found} to {max_year_found} (average: {avg_year:.0f})")
+                text_parts.append(f"\n**Construction period**: {min_year_found} to {max_year_found} (average: {avg_year:.0f})")
             
             # Add era breakdown
             historic = sum(1 for y in years if y < 1900)
@@ -597,199 +612,113 @@ class PDOKBuildingsAdvancedTool(Tool):
             
             era_parts = []
             if historic > 0:
-                era_parts.append(f"{historic} historic (pre-1900)")
+                era_parts.append(f"**{historic}** historic (pre-1900)")
             if early_modern > 0:
-                era_parts.append(f"{early_modern} early modern (1900-1950)")
+                era_parts.append(f"**{early_modern}** early modern (1900-1950)")
             if mid_century > 0:
-                era_parts.append(f"{mid_century} mid-century (1950-2000)")
+                era_parts.append(f"**{mid_century}** mid-century (1950-2000)")
             if contemporary > 0:
-                era_parts.append(f"{contemporary} contemporary (2000+)")
+                era_parts.append(f"**{contemporary}** contemporary (2000+)")
             
             if era_parts:
-                text_parts.append(f"Era breakdown: {', '.join(era_parts)}")
+                text_parts.append(f"\n**Era breakdown**: {', '.join(era_parts)}")
             
-            text_description = ". ".join(text_parts) + ". The buildings are now displayed on the map with color coding by construction era."
+            # Add sample buildings
+            text_parts.append(f"\n**Notable buildings include**:")
+            for i, building in enumerate(processed_features[:5]):  # Show top 5
+                props = building['properties']
+                year = props.get('bouwjaar', 'Unknown year')
+                area = props.get('area_m2', 0)
+                text_parts.append(f"* **{building['name']}** - Built {year}, {area:.0f}m²")
             
-            # UPDATE MAP STATE
+            text_parts.append(f"\nAll **{len(processed_features)} buildings** are displayed on the map with color coding by construction era. Click any building for detailed information.")
+            
+            text_description = "\n".join(text_parts)
+            
+            # Step 8: Update map state
             current_map_state["features"] = processed_features
             current_map_state["last_updated"] = datetime.now().isoformat()
+            current_map_state["center"] = [lon, lat]
+            current_map_state["zoom"] = 14
             
-            if location:
-                loc_coords = find_location_coordinates(location)
-                if "error" not in loc_coords:
-                    current_map_state["center"] = [loc_coords["lon"], loc_coords["lat"]]
-                    current_map_state["zoom"] = 14
-            
-            print(f"Updated map state with {len(processed_features)} buildings")
+            print(f"✅ Updated map state with {len(processed_features)} real PDOK buildings")
             
             return {
                 "text_description": text_description,
                 "geojson_data": processed_features
             }
             
+        except requests.exceptions.RequestException as e:
+            error_msg = f"PDOK service error: {str(e)}"
+            print(f"❌ {error_msg}")
+            return {
+                "text_description": f"❌ Error connecting to PDOK service: {error_msg}. Please try again later.",
+                "geojson_data": [],
+                "error": error_msg
+            }
+            
         except Exception as e:
             error_msg = f"PDOK tool error: {str(e)}"
-            print(error_msg)
+            print(f"❌ {error_msg}")
             return {
-                "text_description": f"Error retrieving buildings: {error_msg}",
-                "geojson_data": None,
+                "text_description": f"❌ Error retrieving buildings from PDOK: {error_msg}",
+                "geojson_data": [],
                 "error": error_msg
             }
 
-
-# Enhanced Mock Building Tool
-class MockBuildingTool(Tool):
-    """Enhanced mock tool with map state updates"""
+def create_agent_with_yaml_prompt():
+    """
+    Create the map-aware agent with YAML system prompt configuration - REAL DATA ONLY.
     
-    name = "get_sample_buildings"
-    description = "Get sample building data with proper geometry and update map state."
-    inputs = {
-        "location": {"type": "string", "description": "Location name"},
-        "count": {"type": "integer", "description": "Number of buildings", "nullable": True}
-    }
-    output_type = "array"
-    is_initialized = True
+    Returns:
+        CodeAgent: Configured agent with YAML system prompt and ONLY real data tools
+    """
+    # Load system prompt from YAML file
+    system_prompt_config = load_system_prompt("static/system_prompt.yml")
     
-    def forward(self, location, count=5):
-        """Generate sample buildings and update map state."""
-        global current_map_state
-        
-        try:
-            loc_data = find_location_coordinates(location)
-            if "error" in loc_data:
-                return [{"error": loc_data["error"]}]
-            
-            base_lat, base_lon = loc_data["lat"], loc_data["lon"]
-            
-            # Update map state
-            current_map_state["center"] = [base_lon, base_lat]
-            current_map_state["zoom"] = 15
-            
-            sample_buildings = [
-                {
-                    "name": "Historic Building 1851",
-                    "lat": base_lat + 0.001,
-                    "lon": base_lon + 0.002,
-                    "description": "Built in 1851 | Status: In use | Area: 245m²",
-                    "geometry": {
-                        "type": "Polygon",
-                        "coordinates": [[
-                            [base_lon + 0.002, base_lat + 0.001], 
-                            [base_lon + 0.0022, base_lat + 0.001], 
-                            [base_lon + 0.0022, base_lat + 0.0012], 
-                            [base_lon + 0.002, base_lat + 0.0012], 
-                            [base_lon + 0.002, base_lat + 0.001]
-                        ]]
-                    },
-                    "properties": ensure_json_serializable({
-                        "bouwjaar": 1851, "status": "Pand in gebruik", "area_m2": 245,
-                        "centroid_lat": base_lat + 0.001, "centroid_lon": base_lon + 0.002,
-                        "identificatie": "MOCK100012062978"
-                    })
-                },
-                {
-                    "name": "Modern Building 2015",
-                    "lat": base_lat - 0.001,
-                    "lon": base_lon - 0.002,
-                    "description": "Built in 2015 | Status: In use | Area: 180m²",
-                    "geometry": {
-                        "type": "Polygon",
-                        "coordinates": [[
-                            [base_lon - 0.002, base_lat - 0.001], 
-                            [base_lon - 0.0018, base_lat - 0.001], 
-                            [base_lon - 0.0018, base_lat - 0.0008], 
-                            [base_lon - 0.002, base_lat - 0.0008], 
-                            [base_lon - 0.002, base_lat - 0.001]
-                        ]]
-                    },
-                    "properties": ensure_json_serializable({
-                        "bouwjaar": 2015, "status": "Pand in gebruik", "area_m2": 180,
-                        "centroid_lat": base_lat - 0.001, "centroid_lon": base_lon - 0.002,
-                        "identificatie": "MOCK100012062979"
-                    })
-                },
-                {
-                    "name": "Mid-Century Building 1975",
-                    "lat": base_lat + 0.0005,
-                    "lon": base_lon - 0.001,
-                    "description": "Built in 1975 | Status: In use | Area: 320m²",
-                    "geometry": {
-                        "type": "Polygon",
-                        "coordinates": [[
-                            [base_lon - 0.001, base_lat + 0.0005], 
-                            [base_lon - 0.0008, base_lat + 0.0005], 
-                            [base_lon - 0.0008, base_lat + 0.0007], 
-                            [base_lon - 0.001, base_lat + 0.0007], 
-                            [base_lon - 0.001, base_lat + 0.0005]
-                        ]]
-                    },
-                    "properties": ensure_json_serializable({
-                        "bouwjaar": 1975, "status": "Pand in gebruik", "area_m2": 320,
-                        "centroid_lat": base_lat + 0.0005, "centroid_lon": base_lon - 0.001,
-                        "identificatie": "MOCK100012062980"
-                    })
-                }
-            ]
-            
-            buildings = sample_buildings[:count]
-            
-            # Update map state
-            current_map_state["features"] = buildings
-            current_map_state["last_updated"] = datetime.now().isoformat()
-            
-            return buildings
-            
-        except Exception as e:
-            return [{"error": f"Mock tool error: {str(e)}"}]
-
-# Initialize map-aware agent with custom system prompt
-SYSTEM_PROMPT = """You are a map-aware AI assistant specialized in Dutch geographic data and GIS. Your primary role is to help users explore building data from the PDOK (Dutch national spatial data infrastructure) and provide spatial insights.
-
-IMPORTANT RESPONSE FORMAT RULES:
-When users ask to show, find, display, or search for buildings:
-1. Use the get_pdok_buildings_with_description tool
-2. The tool returns an object with 'text_description' and 'geojson_data'
-3. ALWAYS return BOTH parts in your response:
-   - Return the text_description as your conversational response
-   - Return the geojson_data exactly as provided (this will be automatically displayed on the map)
-
-Response Structure for Building Queries:
-{
-  "response": "text_description from the tool",
-  "geojson_data": [array of building features from the tool]
-}
-
-For analysis questions about existing map content, use analyze_current_map_features.
-For general GIS questions, use answer_map_question.
-For location searches, use find_location_coordinates.
-
-Key capabilities:
-- Retrieve building data from PDOK WFS service
-- Analyze spatial patterns and building characteristics  
-- Provide GIS and mapping guidance
-- Explain Dutch geographic data sources
-- Support coordinate system conversions
-
-Always be helpful, accurate, and provide spatial context in your responses."""
-
-agent = CodeAgent(
-    model=model,
-    tools=[
+    # Create tools - ONLY REAL DATA TOOLS, NO MOCK TOOLS
+    tools = [
         find_location_coordinates,
         analyze_current_map_features,
         get_map_context_info,
         answer_map_question,
-        PDOKBuildingsAdvancedTool(),
-        MockBuildingTool(),
+        PDOKBuildingsRealTool(),  # ONLY the real PDOK tool
         DuckDuckGoSearchTool()
-    ],
-    max_steps=15,
-    prompt_templates=SYSTEM_PROMPT,
-    additional_authorized_imports=[
-        "xml.etree.ElementTree", "json", "requests", "shapely.geometry", 
-        "shapely.ops", "pyproj", "re", "statistics", "collections", "datetime"
     ]
-)
+    
+    print("🔧 Creating agent with REAL DATA TOOLS ONLY:")
+    for tool in tools:
+        print(f"  ✅ {tool.name}: {tool.description[:80]}...")
+    
+    # Create agent with loaded system prompt
+    if system_prompt_config:
+        print("✅ Using loaded YAML system prompt configuration")
+        agent = CodeAgent(
+            model=model,
+            tools=tools,
+            max_steps=15,
+            prompt_templates=system_prompt_config,  # Use the loaded YAML config
+            additional_authorized_imports=[
+                "xml.etree.ElementTree", "json", "requests", "shapely.geometry", 
+                "shapely.ops", "pyproj", "re", "statistics", "collections", "datetime"
+            ]
+        )
+    else:
+        print("⚠️ Using default system prompt - YAML loading failed")
+        agent = CodeAgent(
+            model=model,
+            tools=tools,
+            max_steps=15,
+            additional_authorized_imports=[
+                "xml.etree.ElementTree", "json", "requests", "shapely.geometry", 
+                "shapely.ops", "pyproj", "re", "statistics", "collections", "datetime"
+            ]
+        )
+    
+    return agent
+
+# Initialize the agent with YAML system prompt - REAL DATA ONLY
+agent = create_agent_with_yaml_prompt()
 
 # Flask routes
 @app.route('/')
@@ -799,11 +728,11 @@ def index():
 
 @app.route('/api/query', methods=['POST'])
 def query():
-    """Handle chat queries using the smolagent without direct interception."""
+    """Handle chat queries using the smolagent with YAML system prompt - REAL DATA ONLY."""
     global current_map_state
     
     print("\n" + "="*60)
-    print("RECEIVED MAP-AWARE QUERY REQUEST")
+    print("RECEIVED MAP-AWARE QUERY REQUEST - REAL PDOK DATA ONLY")
     print("="*60)
     
     data = request.json
@@ -822,7 +751,7 @@ def query():
     current_map_state["zoom"] = map_zoom
     
     try:
-        print("Running map-aware agent...")
+        print("🏗️ Running map-aware agent with REAL PDOK DATA ONLY...")
         
         # Create context-aware prompt
         context_prompt = f"""
@@ -833,7 +762,12 @@ Current map context:
 - Zoom level: {map_zoom}
 - Features on map: {len(current_features)}
 
-Please respond to the user's query following the response format rules in your system prompt.
+IMPORTANT: First determine if this is a GEOGRAPHIC query (asking to show/find/display locations or buildings) or a GENERAL question (about capabilities, GIS concepts, etc.).
+
+- For GEOGRAPHIC queries: Use tools and return JSON with text_description and geojson_data
+- For GENERAL questions: Simply answer the question with plain text using final_answer()
+
+Please respond to the user's query appropriately based on the query type.
 """
         
         result = agent.run(context_prompt)
@@ -841,12 +775,86 @@ Please respond to the user's query following the response format rules in your s
         print(f"\n--- AGENT RESULT DEBUG ---")
         print(f"Result type: {type(result)}")
         
-        # Search for building data in agent execution logs
+        # Try to parse the result as JSON first
+        parsed_response = None
+        if hasattr(result, 'content'):
+            result_text = result.content
+        elif hasattr(result, 'text'):  
+            result_text = result.text
+        elif isinstance(result, str):
+            result_text = result
+        else:
+            result_text = str(result)
+        
+        print(f"Result text preview: {result_text[:200]}...")
+        
+        # Try to parse as JSON
+        try:
+            # Look for JSON structure in the response
+            import re
+            json_match = re.search(r'\{.*"text_description".*"geojson_data".*\}', result_text, re.DOTALL)
+            
+            if json_match:
+                json_str = json_match.group(0)
+                parsed_response = json.loads(json_str)
+                print("✅ Successfully parsed JSON response with text_description and geojson_data")
+                
+                # Validate the structure
+                if isinstance(parsed_response, dict) and 'text_description' in parsed_response and 'geojson_data' in parsed_response:
+                    text_description = parsed_response['text_description']
+                    geojson_data = parsed_response['geojson_data']
+                    
+                    # Validate and process geojson_data
+                    if isinstance(geojson_data, list) and len(geojson_data) > 0:
+                        # Process each feature to ensure proper format
+                        processed_features = []
+                        for feature in geojson_data:
+                            if isinstance(feature, dict) and 'lat' in feature and 'lon' in feature:
+                                # Ensure the geometry is properly formatted
+                                if 'geometry' in feature:
+                                    validated_geom = validate_and_fix_geometry(feature['geometry'])
+                                    if validated_geom:
+                                        feature['geometry'] = validated_geom
+                                
+                                # Ensure properties are serializable
+                                if 'properties' in feature:
+                                    feature['properties'] = ensure_json_serializable(feature['properties'])
+                                
+                                # Validate coordinates
+                                if feature.get('lat', 0) != 0 and feature.get('lon', 0) != 0:
+                                    processed_features.append(feature)
+                        
+                        if processed_features:
+                            print(f"🗺️ Processed {len(processed_features)} valid REAL features for map display")
+                            
+                            # Update map state
+                            current_map_state["features"] = processed_features
+                            current_map_state["last_updated"] = datetime.now().isoformat()
+                            
+                            # Return the separated response
+                            return jsonify({
+                                "response": text_description,
+                                "geojson_data": processed_features
+                            })
+                    
+                    # If geojson_data is empty or invalid, return just the text
+                    print("⚠️ GeoJSON data is empty or invalid, returning text only")
+                    return jsonify({"response": text_description})
+                    
+            else:
+                print("❌ No JSON structure found in response")
+                
+        except json.JSONDecodeError as e:
+            print(f"❌ JSON parsing error: {e}")
+        except Exception as e:
+            print(f"❌ Error processing JSON response: {e}")
+        
+        # Search for building data in agent execution logs (fallback)
         building_data = None
         text_description = None
         
         if hasattr(agent, 'logs') or hasattr(agent, 'memory'):
-            print("🔍 Searching agent execution history for building data...")
+            print("🔍 Searching agent execution history for REAL building data...")
             
             # Try both old logs and new memory.steps
             log_sources = []
@@ -861,27 +869,22 @@ Please respond to the user's query following the response format rules in your s
                 print(f"   🔍 Searching {source_name}...")
                 
                 for log_index, log_entry in enumerate(reversed(log_entries)):
-                    print(f"      📋 Checking {source_name}[{len(log_entries)-1-log_index}]...")
-                    
                     # Multiple ways to find tool calls
                     tool_calls_to_check = []
                     
                     # Method 1: Direct tool_calls attribute
                     if hasattr(log_entry, 'tool_calls'):
                         tool_calls_to_check.extend(log_entry.tool_calls)
-                        print(f"         🔧 Found {len(log_entry.tool_calls)} direct tool calls")
                     
                     # Method 2: step_logs -> tool_calls
                     if hasattr(log_entry, 'step_logs'):
                         for step_log in log_entry.step_logs:
                             if hasattr(step_log, 'tool_calls'):
                                 tool_calls_to_check.extend(step_log.tool_calls)
-                        print(f"         🔧 Found step_logs with tool calls")
                     
                     # Method 3: action or tool_call attributes (for new memory structure)
                     if hasattr(log_entry, 'action') and hasattr(log_entry.action, 'tool_calls'):
                         tool_calls_to_check.extend(log_entry.action.tool_calls)
-                        print(f"         🔧 Found action.tool_calls")
                     
                     # Method 4: Direct action.result (for new memory structure)
                     if hasattr(log_entry, 'action') and hasattr(log_entry.action, 'result'):
@@ -890,13 +893,11 @@ Please respond to the user's query following the response format rules in your s
                             if 'text_description' in result_data and 'geojson_data' in result_data:
                                 text_description = result_data['text_description']
                                 building_data = result_data['geojson_data']
-                                print(f"🏗️  ✅ Found combined response in action.result")
+                                print(f"🏗️  ✅ Found REAL combined response in action.result")
                                 break
                     
                     # Method 5: Check individual tool calls
-                    for tool_call_index, tool_call in enumerate(tool_calls_to_check):
-                        print(f"         🔧 Checking tool call {tool_call_index + 1}/{len(tool_calls_to_check)}")
-                        
+                    for tool_call in tool_calls_to_check:
                         if hasattr(tool_call, 'result'):
                             tool_result = tool_call.result
                             
@@ -907,7 +908,7 @@ Please respond to the user's query following the response format rules in your s
                                 
                                 text_description = tool_result['text_description']
                                 building_data = tool_result['geojson_data']
-                                print(f"🏗️  ✅ Found combined response in tool call result")
+                                print(f"🏗️  ✅ Found REAL combined response in tool call result")
                                 break
                             
                             # Legacy format check (array of buildings)
@@ -918,10 +919,12 @@ Please respond to the user's query following the response format rules in your s
                                     'lon' in first_item and 'name' in first_item and
                                     first_item.get('lat', 0) != 0 and first_item.get('lon', 0) != 0):
                                     
-                                    building_data = tool_result
-                                    text_description = f"Found {len(building_data)} buildings and displayed them on the map."
-                                    print(f"🏗️  ✅ Found legacy building data format: {len(building_data)} buildings")
-                                    break
+                                    # Check that this is NOT mock data
+                                    if not any('mock' in str(first_item).lower() for first_item in tool_result):
+                                        building_data = tool_result
+                                        text_description = f"Found {len(building_data)} real buildings from PDOK and displayed them on the map."
+                                        print(f"🏗️  ✅ Found REAL building data format: {len(building_data)} buildings")
+                                        break
                     
                     if building_data and text_description:
                         break
@@ -931,7 +934,7 @@ Please respond to the user's query following the response format rules in your s
         
         # If we found combined data, return it properly formatted
         if building_data and text_description:
-            print(f"🗺️  Processing combined response with {len(building_data) if isinstance(building_data, list) else 'unknown'} buildings")
+            print(f"🗺️  Processing REAL combined response with {len(building_data) if isinstance(building_data, list) else 'unknown'} buildings")
             
             # Validate and serialize building data
             if isinstance(building_data, list):
@@ -939,6 +942,11 @@ Please respond to the user's query following the response format rules in your s
                 for building in building_data:
                     try:
                         if isinstance(building, dict):
+                            # Skip mock data
+                            if any('mock' in str(value).lower() for value in building.values()):
+                                print("⚠️ Skipping mock data entry")
+                                continue
+                                
                             serialized_building = ensure_json_serializable(building)
                             
                             if 'geometry' in serialized_building:
@@ -957,7 +965,7 @@ Please respond to the user's query following the response format rules in your s
                         continue
                 
                 if serialized_buildings:
-                    print(f"✅ Returning combined response: text + {len(serialized_buildings)} buildings")
+                    print(f"✅ Returning REAL combined response: text + {len(serialized_buildings)} buildings")
                     
                     current_map_state["features"] = serialized_buildings
                     current_map_state["last_updated"] = datetime.now().isoformat()
@@ -968,65 +976,13 @@ Please respond to the user's query following the response format rules in your s
                     })
         
         # Handle text-only responses (analysis, questions, etc.)
-        response_content = None
-        
-        if hasattr(result, 'content'):
-            response_content = result.content
-        elif hasattr(result, 'text'):
-            response_content = result.text
-        elif isinstance(result, str):
-            response_content = result
-        elif isinstance(result, list):
-            response_content = '\n'.join([str(item) for item in result])
-        else:
-            response_content = str(result)
-        
-        print(f"💬 Returning text-only response: {str(response_content)[:200]}...")
-        return jsonify({"response": str(response_content)})
+        print(f"💬 Returning text-only response: {str(result_text)[:200]}...")
+        return jsonify({"response": str(result_text)})
         
     except Exception as e:
         error_msg = f"Map-aware agent error: {str(e)}"
         print(f"❌ ERROR: {error_msg}")
         print("="*60 + "\n")
-        return jsonify({"error": error_msg})
-
-@app.route('/api/buildings', methods=['POST'])
-def get_buildings_direct():
-    """Direct building search endpoint that bypasses the agent."""
-    try:
-        data = request.json
-        location = data.get('location', '')
-        max_features = data.get('max_features', 10)
-        
-        if not location:
-            return jsonify({"error": "Location is required"})
-        
-        print(f"Direct building search for: {location}")
-        
-        # Use PDOK tool directly
-        pdok_tool = PDOKBuildingsAdvancedTool()
-        result = pdok_tool.forward(
-            location=location,
-            max_features=max_features,
-            min_area=50,
-            radius_km=2.0
-        )
-        
-        if isinstance(result, dict) and 'geojson_data' in result:
-            buildings = result['geojson_data']
-            if buildings and len(buildings) > 0 and not buildings[0].get('error'):
-                print(f"Direct search found {len(buildings)} buildings")
-                return jsonify(buildings)
-        
-        # Fallback to mock data
-        print("Using mock data fallback")
-        mock_tool = MockBuildingTool()
-        mock_buildings = mock_tool.forward(location, max_features)
-        return jsonify(mock_buildings)
-            
-    except Exception as e:
-        error_msg = f"Direct building search error: {str(e)}"
-        print(error_msg)
         return jsonify({"error": error_msg})
 
 @app.route('/api/map-state', methods=['GET'])
@@ -1035,14 +991,55 @@ def get_map_state():
     global current_map_state
     return jsonify(current_map_state)
 
+@app.route('/api/reload-prompt', methods=['POST'])
+def reload_system_prompt():
+    """Reload the system prompt from YAML file and recreate the agent."""
+    global agent
+    try:
+        print("🔄 Reloading system prompt from YAML...")
+        agent = create_agent_with_yaml_prompt()
+        return jsonify({
+            "success": True,
+            "message": "System prompt reloaded successfully with REAL DATA TOOLS ONLY"
+        })
+    except Exception as e:
+        error_msg = f"Error reloading system prompt: {str(e)}"
+        print(f"❌ {error_msg}")
+        return jsonify({
+            "success": False,
+            "error": error_msg
+        })
+
 if __name__ == '__main__':
-    print("Starting Map-Aware Flask server")
+    print("🚀 Starting Map-Aware Flask server - REAL PDOK DATA ONLY")
+    print("="*60)
     print("New capabilities:")
-    print("  - Combined text + GeoJSON responses")
-    print("  - Agent-driven building searches")
-    print("  - Enhanced spatial analysis")
-    print("  - Context-aware responses")
-    print("\nAvailable tools:")
-    #for tool in agent.tools:
-        #print(f"  - {tool.name}: {tool.description}")
+    print("  ✅ YAML system prompt loading from static/system_prompt.yml")
+    print("  ✅ Combined text + GeoJSON responses")
+    print("  ✅ REAL PDOK building data from Dutch national database")
+    print("  ✅ Enhanced spatial analysis")
+    print("  ✅ Context-aware responses")
+    print("  ✅ Hot-reload system prompt endpoint: POST /api/reload-prompt")
+    print("  ❌ NO MOCK DATA - REAL DATA ONLY!")
+    print("\nSystem prompt file:", "static/system_prompt.yml")
+    
+    # Check if system prompt file exists
+    if os.path.exists("static/system_prompt.yml"):
+        print("✅ System prompt file found")
+    else:
+        print("⚠️ System prompt file not found - will use defaults")
+    
+    # Check for required dependencies
+    try:
+        import pyproj
+        print("✅ PyProj available for coordinate transformations")
+    except ImportError:
+        print("⚠️ PyProj not available - install with: pip install pyproj")
+    
+    print(f"\n🔧 Available tools (REAL DATA ONLY):")
+    # if agent:
+    #     for tool in agent.tools:
+    #         print(f"  ✅ {tool.name}: {tool.description[:80]}...")
+    
+    print("\n" + "="*60)
     app.run(debug=True, port=5000)
