@@ -11,7 +11,8 @@ from collections import Counter
 from datetime import datetime
 
 # Import the enhanced PDOK location functionality
-from tools import find_location_coordinates, search_dutch_address_pdok, pdok_service,ContactHistoryTool,KadasterBRKTool
+from tools.pdok_location import find_location_coordinates, search_dutch_address_pdok, pdok_service
+from tools.kadaster_tool import KadasterBRKTool, ContactHistoryTool
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
 load_dotenv()
@@ -681,9 +682,9 @@ def create_agent_with_yaml_prompt():
         answer_map_question,
         PDOKBuildingsRealTool(),         # Enhanced with better location search
         DuckDuckGoSearchTool(),
-        pdok_service,
-        ContactHistoryTool,
-        KadasterBRKTool
+        #pdok_service,
+        ContactHistoryTool(),
+        KadasterBRKTool()
         # Add more tools as needed
     ]
 
