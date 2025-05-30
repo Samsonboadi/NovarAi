@@ -1,4 +1,4 @@
-# pdok_location.py - PDOK Locatieserver API Integration Module
+# pdok_location.py - FIXED PDOK Locatieserver API Integration Module
 
 import requests
 import json
@@ -13,9 +13,11 @@ class PDOKLocationService:
     
     def __init__(self):
         self.base_url = "https://api.pdok.nl/bzk/locatieserver/search/v3_1"
-        self.search_endpoint = f"{self.base_url}/search"
+        # FIXED: Use correct endpoints from documentation
+        self.free_endpoint = f"{self.base_url}/free"        # For direct search (was /search)
         self.lookup_endpoint = f"{self.base_url}/lookup"
         self.suggest_endpoint = f"{self.base_url}/suggest"
+        self.reverse_endpoint = f"{self.base_url}/reverse"
         self.user_agent = "PDOK-WebMap-Chat/1.0"
         
         # Available search types in PDOK Locatieserver
@@ -75,21 +77,22 @@ class PDOKLocationService:
                 if not station_result.get('error'):
                     return station_result
             
-            # Prepare API parameters
+            # FIXED: Use correct parameters based on documentation
             params = {
                 'q': query,
                 'rows': 10,
                 'start': 0,
-                'fl': '*',
-                'fq': f'type:({search_types.replace(",", " OR ")})',
+                'fl': 'id identificatie weergavenaam bron type centroide_ll centroide_rd gemeentenaam provincienaam woonplaatsnaam straatnaam huisnummer postcode score',
+                'fq': f'type:({search_types.replace(",", " OR ")})',  # This format is correct
+                'df': 'tekst',  # Default search field
                 'wt': 'json'
             }
             
-            print(f"🌐 PDOK API request: {params}")
+            print(f"🌐 PDOK API request to /free endpoint: {params}")
             
-            # Make API request
+            # FIXED: Use the correct /free endpoint
             response = requests.get(
-                self.search_endpoint,
+                self.free_endpoint,  # This was the problem!
                 params=params,
                 headers={"User-Agent": self.user_agent},
                 timeout=15
@@ -154,20 +157,21 @@ class PDOKLocationService:
                         "source": "partial_match"
                     }
             
-            # API-based station search
+            # API-based station search using correct endpoint
             station_queries = self._generate_station_queries(query)
             
             for station_query in station_queries:
                 params = {
                     'q': station_query,
                     'rows': 5,
-                    'fl': '*',
+                    'fl': 'id identificatie weergavenaam bron type centroide_ll straatnaam woonplaatsnaam gemeentenaam',
                     'fq': 'type:(adres OR woonplaats OR weg)',
                     'wt': 'json'
                 }
                 
+                # FIXED: Use correct endpoint
                 response = requests.get(
-                    self.search_endpoint,
+                    self.free_endpoint,
                     params=params,
                     headers={"User-Agent": self.user_agent},
                     timeout=10
@@ -249,9 +253,9 @@ class PDOKLocationService:
             # Prefer results with coordinates
             if doc.get('centroide_ll'): score += 10
             
-            # Type sorting preference
-            typesortering = doc.get('typesortering', 0)
-            if typesortering: score += float(typesortering) * 2
+            # Use API score if available
+            api_score = doc.get('score', 0)
+            if api_score: score += float(api_score)
             
             scored_results.append((score, doc))
         
@@ -308,6 +312,7 @@ class PDOKLocationService:
                 "place_type": doc.get('type', 'unknown'),
                 "pdok_data": {
                     "id": doc.get('id'),
+                    "identificatie": doc.get('identificatie'),
                     "type": doc.get('type'),
                     "gemeente": doc.get('gemeentenaam'),
                     "provincie": doc.get('provincienaam'),
@@ -315,7 +320,7 @@ class PDOKLocationService:
                     "straatnaam": doc.get('straatnaam'),
                     "huisnummer": doc.get('huisnummer'),
                     "woonplaats": doc.get('woonplaatsnaam'),
-                    "lookup_url": doc.get('lookup_url')
+                    "bron": doc.get('bron')
                 }
             }
             
@@ -403,14 +408,15 @@ def test_pdok_integration():
         "Amsterdam train station",
         "Rotterdam Centraal", 
         "Utrecht station",
-        "Kloosterstraat 27 Ten Boer",
+        "Ten Boer",
+        "Kloosterstraat Ten Boer",
+        "Groningen",
         "Damrak Amsterdam",
         "1012AB Amsterdam",
-        "Den Haag Centraal",
-        "Groningen station"
+        "Den Haag Centraal"
     ]
     
-    print("🧪 Testing PDOK Location Integration")
+    print("🧪 Testing FIXED PDOK Location Integration")
     print("=" * 50)
     
     for query in test_queries:

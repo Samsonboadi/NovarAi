@@ -11,9 +11,9 @@ from collections import Counter
 from datetime import datetime
 
 # Import the enhanced PDOK location functionality
-from tools.pdok_location import find_location_coordinates, search_dutch_address_pdok, pdok_service
+from tools.pdok_location import find_location_coordinates, search_dutch_address_pdok, pdok_service,test_pdok_integration
 from tools.kadaster_tool import KadasterBRKTool, ContactHistoryTool
-
+test_pdok_integration()
 app = Flask(__name__, static_folder='static', template_folder='templates')
 load_dotenv()
 
