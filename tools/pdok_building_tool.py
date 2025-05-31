@@ -53,7 +53,6 @@ class PDOKBuildingsRealTool(Tool):
     
     def forward(self, location, max_features=20, min_year=None, max_year=None, radius_km=2.0):
         """Get REAL buildings from PDOK with DISTANCE-BASED selection around the specified location."""
-        global current_map_state
         
         try:
             print(f"\n🏗️ === DISTANCE-BASED PDOK BUILDINGS SEARCH ===")
@@ -87,32 +86,47 @@ class PDOKBuildingsRealTool(Tool):
                     "error": "Location outside Netherlands"
                 }
             
-            # Step 2: Convert to RD New coordinates and create LARGER search area
+            # Step 2: Adjust search radius for historic buildings (they're often sparse)
+            adjusted_radius_km = radius_km
+            if max_year and max_year < 1950:  # Historic buildings
+                adjusted_radius_km = max(radius_km, 3.0)  # Minimum 3km for historic buildings
+                print(f"🏛️ Historic building search detected - expanding radius to {adjusted_radius_km}km")
+            elif max_year and max_year < 1900:  # Very old buildings
+                adjusted_radius_km = max(radius_km, 5.0)  # Minimum 5km for very old buildings
+                print(f"🏺 Very old building search detected - expanding radius to {adjusted_radius_km}km")
+            
+            # Step 3: Convert to RD New coordinates and create search area
             if self.transformer_to_rd:
                 center_x, center_y = self.transformer_to_rd.transform(target_lon, target_lat)
                 
-                # IMPORTANT: Use larger initial search radius to get more candidates
-                # We'll filter by distance later, so we need a bigger net
-                search_radius_m = radius_km * 2000  # Double the search radius for initial query
+                # Use expanded radius for historic building searches
+                search_radius_m = adjusted_radius_km * 2000  # Double for initial candidate gathering
                 bbox = [center_x - search_radius_m, center_y - search_radius_m, 
                        center_x + search_radius_m, center_y + search_radius_m]
                 use_rd_coordinates = True
                 print(f"✅ Converted to RD New: {center_x:.2f}, {center_y:.2f}")
-                print(f"📏 Initial search radius: {search_radius_m/1000:.1f}km (will filter to {radius_km}km by distance)")
+                print(f"📏 Initial search radius: {search_radius_m/1000:.1f}km (will filter to {adjusted_radius_km}km by distance)")
             else:
                 # Fallback to WGS84 bounding box
-                buffer = radius_km * 0.02  # Larger buffer for initial search
+                buffer = adjusted_radius_km * 0.02  # Larger buffer for initial search
                 bbox = [target_lon - buffer, target_lat - buffer, target_lon + buffer, target_lat + buffer]
                 use_rd_coordinates = False
                 print("⚠️ Using WGS84 coordinates (less accurate)")
             
-            # Step 3: Build CQL filters
+            # Step 3: Build CQL filters with detailed logging
             cql_filters = []
             if min_year:
                 cql_filters.append(f"bouwjaar >= {min_year}")
+                print(f"🗓️ Filtering buildings built after: {min_year}")
             if max_year:
                 cql_filters.append(f"bouwjaar <= {max_year}")
+                print(f"🗓️ Filtering buildings built before: {max_year} (buildings older than {2024 - max_year} years)")
             cql_filter = " AND ".join(cql_filters) if cql_filters else None
+            
+            if cql_filter:
+                print(f"📋 CQL Filter applied: {cql_filter}")
+            else:
+                print("📋 No year filters applied - searching all buildings")
             
             # Step 4: Build PDOK WFS request with LARGER count to get more candidates
             params = {
@@ -168,7 +182,7 @@ class PDOKBuildingsRealTool(Tool):
                     distance_km = self.calculate_distance_km(target_lat, target_lon, building_lat, building_lon)
                     
                     # Only include buildings within the specified radius
-                    if distance_km <= radius_km:
+                    if distance_km <= adjusted_radius_km:
                         building_candidates.append({
                             'feature': feature,
                             'distance_km': distance_km,
@@ -180,19 +194,49 @@ class PDOKBuildingsRealTool(Tool):
                         
                         if i < 5:  # Debug first few buildings
                             building_id = props.get('identificatie', f'Building_{i+1}')[-6:]
-                            print(f"   Building {building_id}: {distance_km:.3f}km away")
+                            building_year = props.get('bouwjaar', 'Unknown')
+                            print(f"   Building {building_id} ({building_year}): {distance_km:.3f}km away")
                 
                 except Exception as e:
                     continue
             
-            print(f"🎯 Found {len(building_candidates)} buildings within {radius_km}km of target location")
+            print(f"🎯 Found {len(building_candidates)} buildings within {adjusted_radius_km}km of target location")
+            
+            # Filter buildings that actually match the year criteria after distance filtering
+            if max_year or min_year:
+                year_filtered_candidates = []
+                for candidate in building_candidates:
+                    building_year = candidate['props'].get('bouwjaar')
+                    if building_year:
+                        matches_criteria = True
+                        if min_year and building_year < min_year:
+                            matches_criteria = False
+                        if max_year and building_year > max_year:
+                            matches_criteria = False
+                        
+                        if matches_criteria:
+                            year_filtered_candidates.append(candidate)
+                        else:
+                            building_id = candidate['props'].get('identificatie', 'Unknown')[-6:]
+                            print(f"   ❌ Excluding Building {building_id} ({building_year}) - doesn't match year criteria")
+                
+                building_candidates = year_filtered_candidates
+                print(f"📅 After year filtering: {len(building_candidates)} buildings match the age criteria")
             
             if not building_candidates:
-                return {
-                    "text_description": f"❌ No buildings found within {radius_km}km of {location}. Found {len(raw_features)} buildings in the wider area, but none were close enough to the target location. Try increasing the search radius.",
-                    "geojson_data": [],
-                    "error": f"No buildings within {radius_km}km radius"
-                }
+                if max_year:
+                    age_requirement = 2024 - max_year
+                    return {
+                        "text_description": f"❌ No buildings found in {location} that are older than {age_requirement} years (built before {max_year + 1}). Searched within {adjusted_radius_km}km radius. You might try expanding the search area or adjusting the age requirement.",
+                        "geojson_data": [],
+                        "error": f"No buildings older than {age_requirement} years found"
+                    }
+                else:
+                    return {
+                        "text_description": f"❌ No buildings found within {adjusted_radius_km}km of {location}. Found {len(raw_features)} buildings in the wider area, but none were close enough to the target location. Try increasing the search radius.",
+                        "geojson_data": [],
+                        "error": f"No buildings within {adjusted_radius_km}km radius"
+                    }
             
             # Step 7: Sort by distance (closest first) and take requested number
             building_candidates.sort(key=lambda x: x['distance_km'])
@@ -280,7 +324,7 @@ class PDOKBuildingsRealTool(Tool):
             
             print(f"🎉 Successfully processed {len(processed_features)} buildings by distance from {location}")
             
-            # Step 9: Create detailed text description
+            # Step 9: Create detailed text description with age-focused content
             location_name = loc_data.get('name', location)
             total_area = sum(f['properties'].get('area_m2', 0) for f in processed_features)
             years = [f['properties'].get('bouwjaar') for f in processed_features if f['properties'].get('bouwjaar')]
@@ -291,12 +335,19 @@ class PDOKBuildingsRealTool(Tool):
             farthest_distance = max(distances)
             avg_distance = sum(distances) / len(distances)
             
-            text_parts = [f"## Real Buildings near {location_name} (Distance-Based Selection)"]
-            text_parts.append(f"\nI found **{len(processed_features)} real buildings** near {location_name}, selected by actual proximity to your specified location.")
+            # Age-focused description
+            text_parts = []
+            if max_year and max_year < 1950:
+                age_threshold = 2024 - max_year
+                text_parts.append(f"## Historic Buildings in {location_name} (Over {age_threshold} Years Old)")
+                text_parts.append(f"\nI found **{len(processed_features)} historic buildings** in {location_name} that are older than {age_threshold} years (built before {max_year + 1}).")
+            else:
+                text_parts.append(f"## Real Buildings near {location_name} (Distance-Based Selection)")
+                text_parts.append(f"\nI found **{len(processed_features)} real buildings** near {location_name}, selected by actual proximity to your specified location.")
             
             # Distance information
             text_parts.append(f"\n**Distance range**: {closest_distance:.3f}km to {farthest_distance:.3f}km (average: {avg_distance:.3f}km)")
-            text_parts.append(f"**Target location**: {target_lat:.6f}°N, {target_lon:.6f}°E")
+            text_parts.append(f"**Search radius**: {adjusted_radius_km}km from {target_lat:.6f}°N, {target_lon:.6f}°E")
             
             if total_area > 0:
                 text_parts.append(f"\n**Total building area**: {total_area:,.0f}m²")
@@ -306,15 +357,34 @@ class PDOKBuildingsRealTool(Tool):
                 min_year_found = min(years)
                 max_year_found = max(years)
                 text_parts.append(f"\n**Construction period**: {min_year_found} to {max_year_found} (average: {avg_year:.0f})")
+                
+                # Age statistics
+                current_year = 2024
+                ages = [current_year - year for year in years]
+                avg_age = sum(ages) / len(ages)
+                oldest_age = max(ages)
+                text_parts.append(f"**Building ages**: {oldest_age} to {min(ages)} years old (average: {avg_age:.0f} years)")
             
-            # Add closest buildings list
-            text_parts.append(f"\n**Closest buildings to {location_name}**:")
-            for i, building in enumerate(processed_features[:5]):
-                props = building['properties']
-                year = props.get('bouwjaar', 'Unknown year')
-                area = props.get('area_m2', 0)
-                distance = props.get('distance_km', 0)
-                text_parts.append(f"* **{building['name']}** - {distance:.3f}km away, Built {year}, {area:.0f}m²")
+            # Add buildings list with age emphasis
+            if max_year and max_year < 1950:
+                text_parts.append(f"\n**Historic buildings found (oldest first)**:")
+                # Sort by age (oldest first)
+                buildings_by_age = sorted(processed_features, key=lambda b: b['properties'].get('bouwjaar', 2024))
+                for i, building in enumerate(buildings_by_age[:5]):
+                    props = building['properties']
+                    year = props.get('bouwjaar', 'Unknown year')
+                    area = props.get('area_m2', 0)
+                    distance = props.get('distance_km', 0)
+                    age = 2024 - year if isinstance(year, int) else 'Unknown'
+                    text_parts.append(f"* **{building['name']}** - {age} years old ({year}), {distance:.3f}km away, {area:.0f}m²")
+            else:
+                text_parts.append(f"\n**Closest buildings to {location_name}**:")
+                for i, building in enumerate(processed_features[:5]):
+                    props = building['properties']
+                    year = props.get('bouwjaar', 'Unknown year')
+                    area = props.get('area_m2', 0)
+                    distance = props.get('distance_km', 0)
+                    text_parts.append(f"* **{building['name']}** - {distance:.3f}km away, Built {year}, {area:.0f}m²")
             
             # Add location details from enhanced search
             if loc_data.get('pdok_data'):
@@ -324,18 +394,11 @@ class PDOKBuildingsRealTool(Tool):
                 if pdok_info.get('provincie'):
                     text_parts.append(f"**Province**: {pdok_info['provincie']}")
             
-            text_parts.append(f"\nAll **{len(processed_features)} buildings** are displayed on the map, sorted by distance from your specified location '{location}'. Each building shows its exact distance in the popup.")
+            text_parts.append(f"\nAll **{len(processed_features)} buildings** are displayed on the map, sorted by distance from your specified location '{location}'. Each building shows its exact distance and age in the popup.")
             
             text_description = "\n".join(text_parts)
             
-            # Step 10: Update map state
-            global current_map_state
-            current_map_state["features"] = processed_features
-            current_map_state["last_updated"] = datetime.now().isoformat()
-            current_map_state["center"] = [target_lon, target_lat]
-            current_map_state["zoom"] = 15  # Closer zoom for detailed view
-            
-            print(f"✅ Updated map state with {len(processed_features)} distance-sorted buildings")
+            print(f"✅ Successfully created response with {len(processed_features)} distance-sorted buildings")
             
             return {
                 "text_description": text_description,
