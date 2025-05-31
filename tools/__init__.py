@@ -2,7 +2,7 @@
 
 from .kadaster_tool import KadasterBRKTool, ContactHistoryTool
 from .pdok_location import find_location_coordinates, search_dutch_address_pdok, pdok_service, test_pdok_integration
-
+from .intelligent_pdok_building_tool import IntelligentPDOKBuildingTool
 # Import the NEW flexible PDOK tools
 from .pdok_service_discovery_tool import (
     PDOKServiceDiscoveryTool,
@@ -30,13 +30,14 @@ __all__ = [
     "KadasterBRKTool",
     "ContactHistoryTool",
     
+    
     # NEW Flexible PDOK tools
     "PDOKServiceDiscoveryTool",
     "PDOKDataRequestTool",
     "PDOKDataFilterTool", 
     "PDOKMapDisplayTool",
     "PDOKBuildingsFlexibleTool",
-    
+    "IntelligentPDOKBuildingTool",
     # Legacy tool (deprecated)
     "PDOKBuildingsRealTool"
 ]

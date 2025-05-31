@@ -15,6 +15,8 @@ from datetime import datetime
 # Import the enhanced PDOK location functionality
 from tools.pdok_location import find_location_coordinates, search_dutch_address_pdok, pdok_service, test_pdok_integration
 from tools.kadaster_tool import KadasterBRKTool, ContactHistoryTool
+from tools.intelligent_pdok_building_tool import IntelligentPDOKBuildingTool
+
 
 # Import the NEW flexible PDOK tools
 from tools.pdok_service_discovery_tool import (
@@ -387,11 +389,16 @@ def create_agent_with_yaml_prompt():
         analyze_current_map_features,
         get_map_context_info,
         answer_map_question,
-        PDOKServiceDiscoveryTool(),      # NEW: Discover PDOK services
-        PDOKDataRequestTool(),           # NEW: Flexible WFS requests
-        PDOKDataFilterTool(),            # NEW: Advanced filtering
-        PDOKMapDisplayTool(),            # NEW: Map display formatting
-        PDOKBuildingsFlexibleTool(),     # NEW: Combined flexible building tool
+        IntelligentPDOKBuildingTool(),   # NEW: Primary intelligent building search tool
+        
+        # Keep flexible tools as backup/advanced options
+        PDOKServiceDiscoveryTool(),      # Service discovery
+        PDOKDataRequestTool(),           # Advanced WFS requests
+        PDOKDataFilterTool(),            # Advanced filtering
+        PDOKMapDisplayTool(),            # Advanced display formatting
+        PDOKBuildingsFlexibleTool(),     # Backup combined tool
+        
+        # Other tools
         DuckDuckGoSearchTool(),
         ContactHistoryTool(),
         KadasterBRKTool()
