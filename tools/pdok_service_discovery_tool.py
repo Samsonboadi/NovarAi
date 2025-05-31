@@ -148,17 +148,37 @@ class PDOKDataRequestTool(Tool):
     output_type = "object"
     is_initialized = True
     
-    def __init__(self):
-        super().__init__()
-        try:
-            import pyproj
-            self.transformer_to_rd = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:28992", always_xy=True)
-            self.transformer_to_wgs84 = pyproj.Transformer.from_crs("EPSG:28992", "EPSG:4326", always_xy=True)
-            print("✅ Coordinate transformers initialized for PDOK data requests")
-        except ImportError:
-            print("❌ PyProj not available - using WGS84 coordinates only")
-            self.transformer_to_rd = None
-            self.transformer_to_wgs84 = None
+    def __init__(self):  # <-- THIS IS THE __init__ METHOD TO UPDATE
+            super().__init__()
+            try:
+                import pyproj
+                
+                # FIXED: Ensure proper coordinate order handling
+                self.transformer_to_rd = pyproj.Transformer.from_crs(
+                    "EPSG:4326", "EPSG:28992", always_xy=True
+                )
+                self.transformer_to_wgs84 = pyproj.Transformer.from_crs(
+                    "EPSG:28992", "EPSG:4326", always_xy=True
+                )
+                
+                # Test the transformation with a known point (Utrecht)
+                test_lon, test_lat = 5.095204, 52.088692  # Utrecht WGS84
+                rd_x, rd_y = self.transformer_to_rd.transform(test_lon, test_lat)
+                print(f"✅ Coordinate transformers initialized for PDOK data requests")
+                print(f"   Test: Utrecht WGS84 ({test_lon}, {test_lat}) → RD New ({rd_x:.2f}, {rd_y:.2f})")
+                
+                # Utrecht should be around (136000, 455000) in RD New
+                if 130000 < rd_x < 145000 and 450000 < rd_y < 465000:
+                    print(f"✅ Coordinate transformation validation: PASSED")
+                else:
+                    print(f"⚠️  Coordinate transformation validation: QUESTIONABLE")
+                    print(f"   Expected: X=130000-145000, Y=450000-465000")
+                    print(f"   Got: X={rd_x:.2f}, Y={rd_y:.2f}")
+                    
+            except ImportError:
+                print("❌ PyProj not available for PDOK data requests - using WGS84 coordinates only")
+                self.transformer_to_rd = None
+                self.transformer_to_wgs84 = None
     
     def forward(self, service_url, layer_name, bbox="auto", cql_filter=None, max_features=100, 
                 center_lat=None, center_lon=None, radius_km=None):
@@ -258,34 +278,57 @@ class PDOKDataRequestTool(Tool):
             return {"error": f"Data request error: {str(e)}"}
     
     def _calculate_bbox(self, center_lat, center_lon, radius_km, srs):
-        """Calculate bounding box around center point."""
+        """Calculate bounding box around center point - FIXED VERSION."""
         try:
+            print(f"🧮 Calculating bbox: center=({center_lat:.6f}, {center_lon:.6f}), radius={radius_km}km, srs={srs}")
+            
             if srs == "EPSG:28992" and self.transformer_to_rd:
-                # Convert to RD New and create bbox
                 center_x, center_y = self.transformer_to_rd.transform(center_lon, center_lat)
-                radius_m = radius_km * 1000
+                print(f"🔄 RD New conversion: ({center_lon:.6f}, {center_lat:.6f}) → ({center_x:.2f}, {center_y:.2f})")
+                
+                # FIXED: Use much smaller buffer - PDOK seems to ignore large bboxes
+                radius_m = radius_km * 800  # Use only 80% of requested radius for bbox
                 
                 min_x = center_x - radius_m
                 min_y = center_y - radius_m
                 max_x = center_x + radius_m
                 max_y = center_y + radius_m
                 
-                return f"{min_x},{min_y},{max_x},{max_y}"
-            
+                bbox = f"{min_x},{min_y},{max_x},{max_y}"
+                print(f"📦 RD New bbox (tighter): {bbox}")
+                
+                # ADDED: Debug bbox corners
+                if self.transformer_to_wgs84:
+                    corners = [(min_x, min_y), (max_x, max_y)]
+                    print(f"🗺️  Bbox covers:")
+                    for i, (x, y) in enumerate(corners):
+                        lon, lat = self.transformer_to_wgs84.transform(x, y)
+                        corner_name = ["SW", "NE"][i]
+                        print(f"   {corner_name}: {lat:.6f}°N, {lon:.6f}°E")
+                
+                return bbox
+                
             else:
-                # Use WGS84 degree approximation
-                degree_per_km = 1.0 / 111.0  # Rough approximation
-                buffer = radius_km * degree_per_km
+                # WGS84 with tighter bounds
+                lat_rad = math.radians(center_lat)
+                km_per_degree_lat = 111.0
+                km_per_degree_lon = 111.0 * math.cos(lat_rad)
                 
-                min_lon = center_lon - buffer
-                min_lat = center_lat - buffer
-                max_lon = center_lon + buffer
-                max_lat = center_lat + buffer
+                # Use smaller buffer for WGS84 too
+                lat_buffer = (radius_km * 0.8) / km_per_degree_lat
+                lon_buffer = (radius_km * 0.8) / km_per_degree_lon
                 
-                return f"{min_lon},{min_lat},{max_lon},{max_lat}"
+                min_lon = center_lon - lon_buffer
+                min_lat = center_lat - lat_buffer
+                max_lon = center_lon + lon_buffer
+                max_lat = center_lat + lat_buffer
+                
+                bbox = f"{min_lon},{min_lat},{max_lon},{max_lat}"
+                print(f"📦 WGS84 bbox (tighter): {bbox}")
+                return bbox
                 
         except Exception as e:
-            print(f"Error calculating bbox: {e}")
+            print(f"❌ Error calculating bbox: {e}")
             return None
     
     def _process_feature(self, feature, srs):
@@ -534,20 +577,45 @@ class PDOKDataFilterTool(Tool):
             return {"error": f"Filtering error: {str(e)}"}
     
     def _haversine_distance(self, lat1, lon1, lat2, lon2):
-        """Calculate distance between two points using Haversine formula."""
-        R = 6371  # Earth's radius in kilometers
-        
-        lat1_rad = math.radians(lat1)
-        lat2_rad = math.radians(lat2)
-        delta_lat = math.radians(lat2 - lat1)
-        delta_lon = math.radians(lon2 - lon1)
-        
-        a = (math.sin(delta_lat / 2) ** 2 + 
-             math.cos(lat1_rad) * math.cos(lat2_rad) * 
-             math.sin(delta_lon / 2) ** 2)
-        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-        
-        return R * c
+        """Calculate distance between two points using Haversine formula - FIXED."""
+        try:
+            # Validate inputs
+            if not all(isinstance(coord, (int, float)) for coord in [lat1, lon1, lat2, lon2]):
+                print(f"⚠️  Invalid coordinates for distance calculation")
+                return 999.0
+                
+            if lat1 == 0 or lon1 == 0 or lat2 == 0 or lon2 == 0:
+                print(f"⚠️  Zero coordinates detected in distance calculation")
+                return 999.0
+            
+            R = 6371  # Earth's radius in kilometers
+            
+            lat1_rad = math.radians(lat1)
+            lat2_rad = math.radians(lat2)
+            delta_lat = math.radians(lat2 - lat1)
+            delta_lon = math.radians(lon2 - lon1)
+            
+            a = (math.sin(delta_lat / 2) ** 2 + 
+                math.cos(lat1_rad) * math.cos(lat2_rad) * 
+                math.sin(delta_lon / 2) ** 2)
+            c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+            
+            distance = R * c
+            
+            # Debug for first few calculations
+            if hasattr(self, '_debug_count'):
+                self._debug_count += 1
+            else:
+                self._debug_count = 1
+                
+            if self._debug_count <= 3:
+                print(f"🧮 Distance calc #{self._debug_count}: ({lat1:.6f},{lon1:.6f}) to ({lat2:.6f},{lon2:.6f}) = {distance:.3f}km")
+            
+            return distance
+            
+        except Exception as e:
+            print(f"❌ Error in distance calculation: {e}")
+            return 999.0
     
     def _calculate_centroid(self, geometry):
         """Calculate centroid of geometry."""
@@ -854,7 +922,7 @@ class PDOKBuildingsFlexibleTool(Tool):
                 layer_name="bag:pand",
                 center_lat=target_lat,
                 center_lon=target_lon,
-                radius_km=radius_km * 2,  # Get more candidates
+                radius_km=radius_km * 1.2,  # Get more candidates
                 max_features=max_features * 10  # Get more candidates for filtering
             )
             
