@@ -1,4 +1,5 @@
-# app.py - Complete Map-Aware PDOK Web Map Chat Assistant with Enhanced Location Search
+# app.py - Fixed with Proper Tool Docstrings for Flexible PDOK Tools
+
 import os
 import json
 import yaml
@@ -12,11 +13,21 @@ from collections import Counter
 from datetime import datetime
 
 # Import the enhanced PDOK location functionality
-from tools.pdok_location import find_location_coordinates, search_dutch_address_pdok, pdok_service,test_pdok_integration
+from tools.pdok_location import find_location_coordinates, search_dutch_address_pdok, pdok_service, test_pdok_integration
 from tools.kadaster_tool import KadasterBRKTool, ContactHistoryTool
-from tools.pdok_building_tool import PDOKBuildingsRealTool
 
+# Import the NEW flexible PDOK tools
+from tools.pdok_service_discovery_tool import (
+    PDOKServiceDiscoveryTool,
+    PDOKDataRequestTool,
+    PDOKDataFilterTool,
+    PDOKMapDisplayTool,
+    PDOKBuildingsFlexibleTool
+)
+
+# Test the PDOK integration
 test_pdok_integration()
+
 app = Flask(__name__, static_folder='static', template_folder='templates')
 load_dotenv()
 
@@ -43,11 +54,10 @@ current_map_state = {
 }
 
 def load_system_prompt(file_path: str = "static/system_prompt.yml") -> dict:
-    """
-    Load system prompt from YAML file.
+    """Load system prompt from YAML file.
     
     Args:
-        file_path: Path to the YAML file
+        file_path: Path to the YAML file containing system prompt configuration
         
     Returns:
         Dictionary with system prompt configuration
@@ -70,16 +80,12 @@ def load_system_prompt(file_path: str = "static/system_prompt.yml") -> dict:
         print("Using default system prompt configuration")
         return {}
 
-# NOTE: find_location_coordinates is now imported from pdok_location module
-# It provides enhanced Dutch location search using PDOK Locatieserver API
-
 @tool
 def analyze_current_map_features() -> dict:
-    """
-    Analyzes the features currently displayed on the map and provides statistics and insights.
+    """Analyzes the features currently displayed on the map and provides statistics and insights.
     
     Returns:
-        dict: Analysis of current map features including counts, statistics, and insights.
+        Analysis of current map features including counts, statistics, and insights
     """
     try:
         global current_map_state
@@ -89,7 +95,7 @@ def analyze_current_map_features() -> dict:
             return {
                 "message": "No features are currently displayed on the map.",
                 "feature_count": 0,
-                "suggestions": ["Try searching for buildings in a specific location like 'Amsterdam train station' or 'Utrecht Centraal'"]
+                "suggestions": ["Try searching for buildings in a specific location like 'Groningen' or 'Amsterdam train station'"]
             }
         
         analysis = {
@@ -209,11 +215,10 @@ def analyze_current_map_features() -> dict:
 
 @tool
 def get_map_context_info() -> dict:
-    """
-    Provides information about the current map view, center, and context.
+    """Provides information about the current map view, center, and context.
     
     Returns:
-        dict: Current map context including center point, zoom level, and view area.
+        Current map context including center point, zoom level, and view area
     """
     try:
         global current_map_state
@@ -251,14 +256,13 @@ def get_map_context_info() -> dict:
 
 @tool
 def answer_map_question(question: str) -> str:
-    """
-    Answers general questions about maps, geography, GIS, and spatial analysis.
+    """Answers general questions about maps, geography, GIS, and spatial analysis.
     
     Args:
-        question (str): The map-related question to answer.
+        question: The map-related question to answer
         
     Returns:
-        str: Answer to the map question.
+        Answer to the map question
     """
     try:
         question_lower = question.lower()
@@ -271,22 +275,29 @@ def answer_map_question(question: str) -> str:
             return """WGS84 (World Geodetic System 1984) is the standard coordinate system used by GPS and most web mapping applications. It defines locations using latitude and longitude in decimal degrees. In the Netherlands, we also use RD New (EPSG:28992), which is the national coordinate system optimized for accurate measurements within Dutch borders."""
         
         elif any(term in question_lower for term in ['what is pdok', 'pdok']):
-            return """PDOK (Publieke Dienstverlening Op de Kaart) is the Dutch national spatial data infrastructure. It provides free access to geographic datasets from Dutch government organizations, including building data (BAG), topographic maps, aerial imagery, and administrative boundaries. It's the authoritative source for Dutch geographic information. The system now uses PDOK Locatieserver API for enhanced location search."""
+            return """PDOK (Publieke Dienstverlening Op de Kaart) is the Dutch national spatial data infrastructure. It provides free access to geographic datasets from Dutch government organizations, including building data (BAG), topographic maps, aerial imagery, and administrative boundaries. It's the authoritative source for Dutch geographic information. The system now uses modular tools for flexible data access."""
         
         elif any(term in question_lower for term in ['what is bag', 'buildings and addresses']):
             return """BAG (Basisregistratie Adressen en Gebouwen) is the Dutch Buildings and Addresses Database. It contains authoritative information about all buildings, addresses, and premises in the Netherlands. Each building has a unique identifier and includes details like construction year, status, area, and precise polygon geometry."""
         
-        elif any(term in question_lower for term in ['locatieserver', 'location search']):
-            return """PDOK Locatieserver is the official Dutch geocoding service that provides accurate coordinates for addresses, places, train stations, and other locations in the Netherlands. This system now uses Locatieserver API to ensure precise location finding, including proper support for train stations like 'Amsterdam Centraal' when you search for 'Amsterdam train station'."""
+        elif any(term in question_lower for term in ['flexible tools', 'modular approach']):
+            return """The new flexible PDOK tools use a modular approach: (1) Service Discovery - finds available PDOK layers and capabilities, (2) Data Request - makes WFS requests to any PDOK service, (3) Data Filter - applies distance, age, and size filters, (4) Map Display - formats results for visualization. This allows the agent to understand PDOK services and construct appropriate queries automatically."""
         
         else:
-            return f"I can help with various map and GIS topics including coordinate systems, data formats, spatial analysis, and Dutch geographic data sources. The system now includes enhanced location search using PDOK Locatieserver API. Could you be more specific about what aspect of mapping or geography you'd like to know about?"
+            return f"I can help with various map and GIS topics including coordinate systems, data formats, spatial analysis, and Dutch geographic data sources. The system now includes flexible modular PDOK tools that can work with any PDOK layer. Could you be more specific about what aspect of mapping or geography you'd like to know about?"
         
     except Exception as e:
         return f"Error answering map question: {str(e)}"
 
 def ensure_json_serializable(obj):
-    """Convert any non-JSON serializable objects to JSON serializable format."""
+    """Convert any non-JSON serializable objects to JSON serializable format.
+    
+    Args:
+        obj: Object to make JSON serializable
+        
+    Returns:
+        JSON serializable version of the object
+    """
     if isinstance(obj, dict):
         return {key: ensure_json_serializable(value) for key, value in obj.items()}
     elif isinstance(obj, (list, tuple)):
@@ -303,7 +314,14 @@ def ensure_json_serializable(obj):
         return str(obj)
 
 def validate_and_fix_geometry(geometry):
-    """Validate and fix geometry data structure."""
+    """Validate and fix geometry data structure.
+    
+    Args:
+        geometry: Geometry object to validate and fix
+        
+    Returns:
+        Fixed geometry object or None if invalid
+    """
     if not isinstance(geometry, dict):
         return None
         
@@ -352,36 +370,48 @@ def validate_and_fix_geometry(geometry):
         print(f"Error fixing geometry: {e}")
         return None
 
-# Enhanced PDOK Buildings Tool with integrated PDOK Locatieserver location search
-
 def create_agent_with_yaml_prompt():
-    """
-    Create the map-aware agent with YAML system prompt configuration and enhanced PDOK location search.
+    """Create the map-aware agent with YAML system prompt configuration and flexible PDOK tools.
     
     Returns:
-        CodeAgent: Configured agent with YAML system prompt and enhanced location search tools
+        Configured agent with YAML system prompt and flexible PDOK tools
     """
+    
     # Load system prompt from YAML file
     system_prompt_config = load_system_prompt("static/system_prompt.yml")
     
-    # Create tools - Now with enhanced PDOK location search
+    # Create tools - Now with FLEXIBLE PDOK TOOLS
     tools = [
         find_location_coordinates,        # Enhanced with PDOK Locatieserver
-        search_dutch_address_pdok,       # New specialized address search  
+        search_dutch_address_pdok,       # Specialized address search  
         analyze_current_map_features,
         get_map_context_info,
         answer_map_question,
-        PDOKBuildingsRealTool(),         # Enhanced with better location search
+        PDOKServiceDiscoveryTool(),      # NEW: Discover PDOK services
+        PDOKDataRequestTool(),           # NEW: Flexible WFS requests
+        PDOKDataFilterTool(),            # NEW: Advanced filtering
+        PDOKMapDisplayTool(),            # NEW: Map display formatting
+        PDOKBuildingsFlexibleTool(),     # NEW: Combined flexible building tool
         DuckDuckGoSearchTool(),
-        #pdok_service,
         ContactHistoryTool(),
         KadasterBRKTool()
-        # Add more tools as needed
     ]
 
-    print("🔧 Creating agent with ENHANCED PDOK TOOLS:")
-    #for tool in tools:
-        #print(f"  ✅ {tool.name}: {tool.description[:80]}...")
+    print("🔧 Creating agent with FLEXIBLE PDOK TOOLS:")
+    for tool in tools:
+        if hasattr(tool, 'name'):
+            tool_name = tool.name
+        elif hasattr(tool, '__name__'):
+            tool_name = tool.__name__
+        else:
+            tool_name = str(type(tool).__name__)
+        
+        if hasattr(tool, 'description'):
+            description = tool.description[:60] + "..."
+        else:
+            description = "No description available"
+        
+        print(f"  ✅ {tool_name}: {description}")
     
     # Create agent with loaded system prompt
     if system_prompt_config:
@@ -390,7 +420,7 @@ def create_agent_with_yaml_prompt():
             model=model,
             tools=tools,
             max_steps=15,
-            prompt_templates=system_prompt_config,  # Use the loaded YAML config
+            prompt_templates=system_prompt_config,
             additional_authorized_imports=[
                 "xml.etree.ElementTree", "json", "requests", "shapely.geometry", 
                 "shapely.ops", "pyproj", "re", "statistics", "collections", "datetime"
@@ -410,7 +440,7 @@ def create_agent_with_yaml_prompt():
     
     return agent
 
-# Initialize the agent with enhanced PDOK location search
+# Initialize the agent with flexible PDOK tools
 agent = create_agent_with_yaml_prompt()
 
 # Flask routes
@@ -421,11 +451,11 @@ def index():
 
 @app.route('/api/query', methods=['POST'])
 def query():
-    """Handle chat queries using the smolagent with enhanced PDOK location search."""
+    """Handle chat queries using the smolagent with flexible PDOK tools."""
     global current_map_state
     
     print("\n" + "="*60)
-    print("RECEIVED MAP-AWARE QUERY REQUEST - ENHANCED PDOK LOCATION SEARCH")
+    print("RECEIVED MAP-AWARE QUERY REQUEST - FLEXIBLE PDOK TOOLS")
     print("="*60)
     
     data = request.json
@@ -444,7 +474,7 @@ def query():
     current_map_state["zoom"] = map_zoom
     
     try:
-        print("🏗️ Running enhanced map-aware agent with PDOK Locatieserver...")
+        print("🏗️ Running enhanced map-aware agent with flexible PDOK tools...")
         
         # Create context-aware prompt
         context_prompt = f"""
@@ -455,11 +485,18 @@ Current map context:
 - Zoom level: {map_zoom}
 - Features on map: {len(current_features)}
 
-IMPORTANT: The system now uses enhanced PDOK Locatieserver API for accurate Dutch location search.
+IMPORTANT: The system now uses FLEXIBLE MODULAR PDOK TOOLS:
 
-- Train stations like "Amsterdam train station" will now correctly find Amsterdam Centraal
-- Addresses like "Kloosterstraat 27 Ten Boer" will be found accurately
-- All Dutch locations, municipalities, and places are properly supported
+1. discover_pdok_services: Find available PDOK WFS services and layers
+2. request_pdok_data: Make flexible WFS requests to any PDOK service
+3. filter_pdok_data: Apply distance, age, area, and other filters
+4. format_pdok_for_map: Format results for map display
+5. get_pdok_buildings_flexible: Combined tool for building searches
+
+WORKFLOW for building searches:
+- Use get_pdok_buildings_flexible for simple building queries
+- For complex queries, use the individual tools in sequence
+- The tools can handle any PDOK layer, not just buildings
 
 For GEOGRAPHIC queries: Use tools and return JSON with text_description and geojson_data
 For GENERAL questions: Simply answer the question with plain text using final_answer()
@@ -619,7 +656,7 @@ Please respond to the user's query appropriately based on the query type.
                                     # Check that this is NOT mock data
                                     if not any('mock' in str(first_item).lower() for first_item in tool_result):
                                         building_data = tool_result
-                                        text_description = f"Found {len(building_data)} real buildings from enhanced PDOK search and displayed them on the map."
+                                        text_description = f"Found {len(building_data)} real buildings from flexible PDOK search and displayed them on the map."
                                         print(f"🏗️  ✅ Found building data format: {len(building_data)} buildings")
                                         break
                     
@@ -662,7 +699,7 @@ Please respond to the user's query appropriately based on the query type.
                         continue
                 
                 if serialized_buildings:
-                    print(f"✅ Returning enhanced combined response: text + {len(serialized_buildings)} buildings")
+                    print(f"✅ Returning flexible combined response: text + {len(serialized_buildings)} buildings")
                     
                     current_map_state["features"] = serialized_buildings
                     current_map_state["last_updated"] = datetime.now().isoformat()
@@ -677,7 +714,7 @@ Please respond to the user's query appropriately based on the query type.
         return jsonify({"response": str(result_text)})
         
     except Exception as e:
-        error_msg = f"Enhanced map-aware agent error: {str(e)}"
+        error_msg = f"Flexible map-aware agent error: {str(e)}"
         print(f"❌ ERROR: {error_msg}")
         print("="*60 + "\n")
         return jsonify({"error": error_msg})
@@ -697,7 +734,7 @@ def reload_system_prompt():
         agent = create_agent_with_yaml_prompt()
         return jsonify({
             "success": True,
-            "message": "System prompt reloaded successfully with ENHANCED PDOK LOCATIESERVER INTEGRATION"
+            "message": "System prompt reloaded successfully with FLEXIBLE PDOK TOOLS"
         })
     except Exception as e:
         error_msg = f"Error reloading system prompt: {str(e)}"
@@ -709,7 +746,10 @@ def reload_system_prompt():
 
 @app.route('/api/test-location', methods=['POST'])
 def test_location_search():
-    """Test endpoint for the enhanced location search."""
+    """Test endpoint for the enhanced location search.
+    
+    Expects JSON body with 'query' field containing location to search for.
+    """
     data = request.json
     query = data.get('query', '')
     
@@ -734,74 +774,125 @@ def test_location_search():
             "success": False
         })
 
-if __name__ == '__main__':
-    print("🚀 Starting Enhanced Map-Aware Flask server with PDOK Locatieserver Integration")
-    print("="*80)
-    print("NEW ENHANCED CAPABILITIES:")
-    print("  ✅ PDOK Locatieserver API integration for accurate Dutch location search")
-    print("  ✅ Train station search: 'Amsterdam train station' → Amsterdam Centraal (52.3791, 4.8980)")
-    print("  ✅ Address search: 'Kloosterstraat 27 Ten Boer' → exact coordinates")
-    print("  ✅ Enhanced location scoring and result ranking")
-    print("  ✅ Netherlands boundary validation")
-    print("  ✅ Detailed location metadata (municipality, province, postal code)")
-    print("  ✅ YAML system prompt loading from static/system_prompt.yml")
-    print("  ✅ Combined text + GeoJSON responses")
-    print("  ✅ REAL PDOK building data from Dutch national database")
-    print("  ✅ Enhanced spatial analysis and context-aware responses")
-    print("  ✅ Hot-reload system prompt endpoint: POST /api/reload-prompt")
-    print("  ✅ Location test endpoint: POST /api/test-location")
-    print("  ❌ NO MOCK DATA - REAL DATA ONLY!")
-    
-    print("\nLOCATION SEARCH IMPROVEMENTS:")
-    print("  🚂 Train stations: Amsterdam/Rotterdam/Utrecht/Den Haag Centraal")
-    print("  🏠 Addresses: Full Dutch address support via PDOK Locatieserver")
-    print("  🏛️ Municipalities: All Dutch gemeenten supported")
-    print("  📮 Postal codes: Complete Dutch postal code database")
-    print("  🗺️ Coordinate validation: Ensures results are within Netherlands")
-    
-    # Check if required files exist
-    if os.path.exists("static/system_prompt.yml"):
-        print("✅ System prompt file found")
-    else:
-        print("⚠️ System prompt file not found - will use defaults")
-    
-    if os.path.exists("pdok_location.py"):
-        print("✅ PDOK location module found")
-    else:
-        print("❌ PDOK location module (pdok_location.py) not found - please create it!")
-    
-    # Check for required dependencies
+@app.route('/api/test-pdok-services', methods=['POST'])
+def test_pdok_services():
+    """Test endpoint for PDOK service discovery."""
     try:
-        import pyproj
-        print("✅ PyProj available for coordinate transformations")
-    except ImportError:
-        print("⚠️ PyProj not available - install with: pip install pyproj")
+        from tools.pdok_service_discovery_tool import PDOKServiceDiscoveryTool
+        
+        discovery_tool = PDOKServiceDiscoveryTool()
+        result = discovery_tool.forward("all")
+        
+        return jsonify({
+            "success": True,
+            "services": result
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        })
+
+@app.route('/api/test-flexible-buildings', methods=['POST'])
+def test_flexible_buildings():
+    """Test endpoint for flexible building search.
     
-    print(f"\n🔧 AVAILABLE TOOLS (ENHANCED LOCATION SEARCH):")
-    print(f"  ✅ find_location_coordinates: Enhanced PDOK Locatieserver integration")
-    print(f"  ✅ search_dutch_address_pdok: Specialized address search") 
-    print(f"  ✅ analyze_current_map_features: Map analysis and statistics")
-    print(f"  ✅ get_map_context_info: Current map context information")
-    print(f"  ✅ answer_map_question: GIS and mapping knowledge")
-    print(f"  ✅ PDOKBuildingsRealTool: Real building data with enhanced location search")
-    print(f"  ✅ DuckDuckGoSearchTool: Web search capability")
+    Expects JSON body with optional parameters:
+    - location: Location to search (default: 'Groningen')
+    - max_year: Maximum construction year for age filtering
+    - radius_km: Search radius in kilometers (default: 5.0)
+    """
+    data = request.json
+    location = data.get('location', 'Groningen')
+    max_year = data.get('max_year', None)
+    radius_km = data.get('radius_km', 5.0)
+    
+    try:
+        from tools.pdok_service_discovery_tool import PDOKBuildingsFlexibleTool
+        
+        flexible_tool = PDOKBuildingsFlexibleTool()
+        result = flexible_tool.forward(
+            location=location,
+            max_features=10,
+            max_year=max_year,
+            radius_km=radius_km
+        )
+        
+        return jsonify({
+            "success": True,
+            "location": location,
+            "max_year": max_year,
+            "radius_km": radius_km,
+            "result": result
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        })
+
+if __name__ == '__main__':
+    print("🚀 Starting Enhanced Map-Aware Flask server with FLEXIBLE PDOK TOOLS")
+    print("="*80)
+    print("NEW FLEXIBLE CAPABILITIES:")
+    print("  ✅ Modular PDOK tools for any WFS service and layer")
+    print("  ✅ Service discovery - finds available PDOK layers automatically")
+    print("  ✅ Flexible data requests - works with any PDOK WFS endpoint")
+    print("  ✅ Advanced filtering - distance, age, area, and custom criteria")
+    print("  ✅ Smart map formatting - proper descriptions and metadata")
+    print("  ✅ Combined building tool - simple interface for complex operations")
+    print("  ✅ Better coordinate handling and distance calculations")
+    print("  ✅ Enhanced error handling and debugging")
+    print("  ✅ FIXED: Proper tool docstrings for smolagents compatibility")
+    
+    print("\nFLEXIBLE TOOL ARCHITECTURE:")
+    print("  🔍 discover_pdok_services: Find available PDOK WFS services")
+    print("  🌐 request_pdok_data: Make flexible WFS requests to any service")
+    print("  🔽 filter_pdok_data: Apply advanced filters to results")
+    print("  🗺️ format_pdok_for_map: Format data for map display")
+    print("  🏗️ get_pdok_buildings_flexible: Combined building search tool")
+    
+    print("\nSOLVES PREVIOUS ISSUES:")
+    print("  ✅ No more 0 buildings found - better distance calculations")
+    print("  ✅ Proper coordinate system handling - RD New ↔ WGS84")
+    print("  ✅ Flexible filtering - age, area, distance criteria")
+    print("  ✅ Agent can understand PDOK services automatically")
+    print("  ✅ Works with any PDOK layer, not just buildings")
+    print("  ✅ Detailed logging for debugging")
+    print("  ✅ FIXED: Tool docstring compatibility with smolagents")
+    
+    print("\nTEST ENDPOINTS:")
+    print("  🧪 POST /api/test-location - Test location search")
+    print("  🧪 POST /api/test-pdok-services - Test service discovery")
+    print("  🧪 POST /api/test-flexible-buildings - Test flexible building search")
+    
+    print("\nEXAMPLE QUERIES TO TEST:")
+    print("  • 'Show me 20 buildings in Groningen older than 100 years'")
+    print("  • 'Find buildings near Amsterdam train station built before 1950'")
+    print("  • 'Show historic buildings in Utrecht within 3km radius'")
+    print("  • 'Buildings in Rotterdam larger than 500m² from the 1960s'")
+    print("  • 'What PDOK services are available?'")
     
     print("\n" + "="*80)
-    print("🎯 TEST THE ENHANCED LOCATION SEARCH WITH QUERIES LIKE:")
-    print("  • 'Show me buildings around Amsterdam train station'")
-    print("  • 'Find buildings near Rotterdam Centraal'") 
-    print("  • 'Buildings in Utrecht station area'")
-    print("  • 'Show buildings at Kloosterstraat 27 Ten Boer'")
-    print("  • 'Find buildings in Den Haag Centraal area'")
-    print("  • 'Buildings near Groningen station'")
-    print("="*80)
-    
-    print(f"\n🌐 Server endpoints:")
+    print(f"🌐 Server endpoints:")
     print(f"  📱 Main app: http://localhost:5000")
     print(f"  🤖 Chat API: POST /api/query")
     print(f"  🗺️ Map state: GET /api/map-state") 
     print(f"  🔄 Reload prompt: POST /api/reload-prompt")
-    print(f"  🧪 Test location: POST /api/test-location")
+    print(f"  🧪 Test endpoints: /api/test-*")
+    
+    print("\n🔧 TROUBLESHOOTING:")
+    print("  If you get import errors:")
+    print("    1. Make sure tools/pdok_service_discovery_tool.py exists")
+    print("    2. Check that PyProj is installed: pip install pyproj")
+    print("    3. Verify all tool files are in the tools/ directory")
+    
+    print("\n🎯 THE DOCSTRING FIX:")
+    print("  ✅ All @tool decorated functions now have proper parameter descriptions")
+    print("  ✅ This resolves the DocstringParsingException error")
+    print("  ✅ smolagents can now generate JSON schemas correctly")
     print()
     
     app.run(debug=True, port=5000)
