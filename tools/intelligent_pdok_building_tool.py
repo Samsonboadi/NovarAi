@@ -7,24 +7,25 @@ from typing import Dict, List, Optional, Tuple
 
 class IntelligentPDOKBuildingTool(Tool):
     """
-    Intelligent PDOK Buildings tool that adapts search radius and strategy based on query context.
+    FIXED: Intelligent PDOK Buildings tool with TRUE address-centered search.
     
-    Features:
-    - Context-aware radius calculation (city vs street address vs specific location)
-    - Intelligent building density estimation
-    - Progressive radius expansion if insufficient results
-    - Always starts from specified location and expands outward
-    - Adapts strategy based on query type and user intent
+    Key Fixes:
+    - Uses exact address coordinates as center point
+    - Sorts by actual distance from address (not random)
+    - Progressive radius expansion from address
+    - Area filtering AFTER distance sorting
+    - Proper proximity-based selection
     """
     
     name = "get_buildings_intelligent"
-    description = "Get buildings with intelligent radius calculation and context-aware search strategy based on location type and user intent"
+    description = "Get buildings with FIXED address-centered search and proper distance-based selection"
     inputs = {
-        "location": {"type": "string", "description": "Location (e.g., 'Groningen', 'Kloosterstraat 27 Ten Boer', 'Amsterdam train station')"},
-        "max_features": {"type": "integer", "description": "Number of buildings wanted (agent calculates appropriate radius)", "nullable": True},
+        "location": {"type": "string", "description": "Location (e.g., 'Leonard Springerlaan 37, Groningen')"},
+        "max_features": {"type": "integer", "description": "Number of buildings wanted", "nullable": True},
         "min_year": {"type": "integer", "description": "Minimum construction year", "nullable": True},
         "max_year": {"type": "integer", "description": "Maximum construction year", "nullable": True},
-        "search_strategy": {"type": "string", "description": "Search strategy: 'nearest' (default), 'random', 'historic_priority'", "nullable": True}
+        "min_area_m2": {"type": "number", "description": "Minimum area in square meters", "nullable": True},
+        "search_strategy": {"type": "string", "description": "Search strategy: 'address_centered' (default), 'nearest'", "nullable": True}
     }
     output_type = "object"
     is_initialized = True
@@ -37,124 +38,170 @@ class IntelligentPDOKBuildingTool(Tool):
             import pyproj
             self.transformer_to_wgs84 = pyproj.Transformer.from_crs("EPSG:28992", "EPSG:4326", always_xy=True)
             self.transformer_to_rd = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:28992", always_xy=True)
-            print("✅ Intelligent PDOK tool initialized with coordinate transformers")
+            print("✅ FIXED Intelligent PDOK tool initialized")
         except ImportError:
             print("❌ PyProj required for intelligent PDOK tool")
             self.transformer_to_wgs84 = None
             self.transformer_to_rd = None
     
-    def forward(self, location, max_features=10, min_year=None, max_year=None, search_strategy="nearest"):
-        """Intelligent building search with context-aware radius calculation."""
+    def forward(self, location, max_features=10, min_year=None, max_year=None, min_area_m2=None, search_strategy="address_centered"):
+        """FIXED: Address-centered building search with proper proximity sorting."""
         
         try:
-            print(f"\n🧠 === INTELLIGENT PDOK BUILDING SEARCH ===")
+            print(f"\n🎯 === FIXED ADDRESS-CENTERED SEARCH ===")
             print(f"Location: {location}")
             print(f"Requested buildings: {max_features}")
-            print(f"Strategy: {search_strategy}")
+            print(f"Min area: {min_area_m2}m²" if min_area_m2 else "No area filter")
+            print(f"🔧 USING FIXED ADDRESS-CENTERED LOGIC")
             
-            # Step 1: Enhanced location analysis
-            location_context = self._analyze_location_context(location)
+            # Step 1: Enhanced location analysis with better address detection
+            location_context = self._analyze_location_context_fixed(location)
             print(f"📍 Location type: {location_context['type']}")
-            print(f"🎯 Suggested strategy: {location_context['strategy']}")
+            print(f"🎯 Search strategy: {location_context['strategy']}")
             
-            # Step 2: Get precise coordinates
+            # Step 2: Get EXACT coordinates of the address
             from tools.pdok_location import find_location_coordinates
             loc_data = find_location_coordinates(location)
             
             if "error" in loc_data:
                 return {
-                    "text_description": f"❌ Could not find location: {location}. {loc_data['error']}",
+                    "text_description": f"❌ Could not find exact address: {location}. {loc_data['error']}",
                     "geojson_data": [],
                     "error": loc_data["error"]
                 }
             
             target_lat, target_lon = loc_data["lat"], loc_data["lon"]
-            print(f"✅ Coordinates: {target_lat:.6f}, {target_lon:.6f}")
+            print(f"✅ EXACT address coordinates: {target_lat:.6f}, {target_lon:.6f}")
+            print(f"📍 Address details: {loc_data.get('description', 'N/A')}")
             
-            # Step 3: Calculate intelligent initial radius
-            initial_radius = self._calculate_intelligent_radius(
-                location_context, max_features, min_year, max_year
-            )
-            print(f"🧮 Initial search radius: {initial_radius}km")
+            # Step 3: FIXED - Use small initial radius for addresses
+            if location_context['type'] == 'specific_address':
+                initial_radius = 0.2  # Start with 200m for addresses
+                max_radius = 2.0      # Max 2km for addresses  
+                print(f"🏠 Specific address detected - starting with {initial_radius}km radius")
+            else:
+                initial_radius = location_context.get('initial_radius', 1.0)
+                max_radius = location_context.get('max_radius', 10.0)
             
-            # Step 4: Progressive search with radius expansion if needed
+            # Step 4: FIXED - Progressive search with ADDRESS AS CENTER
             all_buildings = []
             current_radius = initial_radius
-            max_radius = location_context.get('max_radius', 20.0)
             attempts = 0
             
-            while len(all_buildings) < max_features and current_radius <= max_radius and attempts < 4:
+            print(f"🎯 Starting progressive search from EXACT ADDRESS coordinates")
+            
+            while len(all_buildings) < max_features * 2 and current_radius <= max_radius and attempts < 5:
                 attempts += 1
-                print(f"\n🔍 Search attempt {attempts}: radius {current_radius:.1f}km")
+                print(f"\n🔍 Search attempt {attempts}: radius {current_radius:.1f}km from address")
                 
-                # Get buildings for current radius
-                buildings = self._search_buildings_at_radius(
-                    target_lat, target_lon, current_radius, 
-                    max_features * 3,  # Get more candidates
+                # Get buildings at current radius FROM THE ADDRESS
+                buildings = self._search_buildings_from_address(
+                    target_lat, target_lon, current_radius,
+                    max_features * 5,  # Get more candidates
                     min_year, max_year
                 )
                 
                 if buildings:
-                    # Calculate distances and sort by proximity
+                    print(f"📦 Found {len(buildings)} buildings in {current_radius:.1f}km radius")
+                    
+                    # CRITICAL FIX: Calculate distance from ADDRESS for each building
                     buildings_with_distance = []
                     for building in buildings:
-                        distance = self._calculate_distance_km(
-                            target_lat, target_lon,
-                            building.get('lat', 0), building.get('lon', 0)
-                        )
-                        building['distance_km'] = distance
-                        buildings_with_distance.append(building)
+                        building_lat = building.get('lat', 0)
+                        building_lon = building.get('lon', 0)
+                        
+                        if building_lat != 0 and building_lon != 0:
+                            distance = self._calculate_distance_km(
+                                target_lat, target_lon,    # FROM ADDRESS
+                                building_lat, building_lon  # TO BUILDING
+                            )
+                            building['distance_from_address'] = distance
+                            building['distance_km'] = distance  # For compatibility
+                            buildings_with_distance.append(building)
                     
-                    # Sort by distance (nearest first) - THIS IS KEY!
-                    buildings_with_distance.sort(key=lambda x: x['distance_km'])
+                    # CRITICAL FIX: Sort by distance FROM ADDRESS (not random!)
+                    buildings_with_distance.sort(key=lambda x: x['distance_from_address'])
                     
-                    # Filter to unique buildings not already found
+                    print(f"🎯 Buildings sorted by distance from address:")
+                    for i, building in enumerate(buildings_with_distance[:5]):
+                        dist = building['distance_from_address']
+                        props = building.get('properties', {})
+                        year = props.get('bouwjaar', 'Unknown')
+                        area = props.get('area_m2', 0)
+                        print(f"   {i+1}. {dist:.3f}km - Year: {year}, Area: {area:.0f}m²")
+                    
+                    # Add unique buildings (avoid duplicates)
                     for building in buildings_with_distance:
                         building_id = building.get('properties', {}).get('identificatie')
                         if building_id and not any(b.get('properties', {}).get('identificatie') == building_id for b in all_buildings):
                             all_buildings.append(building)
-                    
-                    print(f"📦 Found {len(buildings)} buildings, total unique: {len(all_buildings)}")
-                    
-                    # Show closest buildings found
-                    for i, building in enumerate(all_buildings[:3]):
-                        dist = building.get('distance_km', 0)
-                        year = building.get('properties', {}).get('bouwjaar', 'Unknown')
-                        print(f"   {i+1}. Distance: {dist:.3f}km, Year: {year}")
                 
-                if len(all_buildings) >= max_features:
-                    print(f"✅ Found enough buildings ({len(all_buildings)}) within {current_radius:.1f}km")
+                if len(all_buildings) >= max_features * 2:
+                    print(f"✅ Found enough candidates ({len(all_buildings)}) within {current_radius:.1f}km")
                     break
                 
-                # Expand radius using intelligent progression
-                if location_context['type'] == 'specific_address':
-                    current_radius *= 1.5  # Smaller expansion for addresses
-                elif location_context['type'] == 'city':
-                    current_radius *= 2.0  # Larger expansion for cities
-                else:
-                    current_radius *= 1.8  # Medium expansion for other types
-                
-                print(f"🔄 Expanding radius to {current_radius:.1f}km")
+                # Expand radius for next attempt
+                current_radius *= 1.5  # Smaller expansion for addresses
+                print(f"🔄 Expanding search radius to {current_radius:.1f}km")
             
-            # Step 5: Apply search strategy and limit results
-            final_buildings = self._apply_search_strategy(
-                all_buildings, max_features, search_strategy, target_lat, target_lon
-            )
-            
-            if not final_buildings:
+            if not all_buildings:
                 return {
-                    "text_description": f"❌ No buildings found near {location} matching your criteria. Searched up to {current_radius:.1f}km radius.",
+                    "text_description": f"❌ No buildings found near {location} within {current_radius:.1f}km radius.",
                     "geojson_data": [],
                     "error": "No buildings found"
                 }
             
-            # Step 6: Create enhanced response
-            text_description = self._create_intelligent_description(
-                final_buildings, location, loc_data, location_context, 
-                search_strategy, max_features, min_year, max_year
-            )
+            # Step 5: FIXED - Apply area filter to DISTANCE-SORTED buildings
+            filtered_buildings = []
+            if min_area_m2:
+                print(f"\n🔽 Applying area filter: buildings > {min_area_m2}m²")
+                for building in all_buildings:
+                    props = building.get('properties', {})
+                    
+                    # Get area from multiple possible fields
+                    area = None
+                    for area_field in ['area_m2', 'oppervlakte_max', 'oppervlakte_min']:
+                        area_value = props.get(area_field)
+                        if area_value and isinstance(area_value, (int, float)) and area_value > 0:
+                            area = float(area_value)
+                            break
+                    
+                    if area and area >= min_area_m2:
+                        # Update area in properties for consistency
+                        building['properties']['area_m2'] = area
+                        filtered_buildings.append(building)
+                        
+                        if len(filtered_buildings) <= 5:
+                            dist = building.get('distance_from_address', 0)
+                            print(f"   ✅ Building {len(filtered_buildings)}: {area:.0f}m² at {dist:.3f}km")
+                
+                if not filtered_buildings:
+                    return {
+                        "text_description": f"❌ No buildings near {location} with area ≥ {min_area_m2}m². Found {len(all_buildings)} buildings but none meet area requirement.",
+                        "geojson_data": [],
+                        "error": f"No buildings with area ≥ {min_area_m2}m²"
+                    }
+                
+                print(f"📊 {len(filtered_buildings)} buildings meet area criteria (≥ {min_area_m2}m²)")
+            else:
+                filtered_buildings = all_buildings
+                print(f"📊 No area filter - using all {len(filtered_buildings)} buildings")
             
-            print(f"🎉 Returning {len(final_buildings)} buildings using {search_strategy} strategy")
+            # Step 6: Take the closest buildings that meet criteria
+            final_buildings = filtered_buildings[:max_features]
+            
+            print(f"\n🎉 Final selection: {len(final_buildings)} closest buildings")
+            for i, building in enumerate(final_buildings):
+                dist = building.get('distance_from_address', 0)
+                props = building.get('properties', {})
+                area = props.get('area_m2', 0)
+                year = props.get('bouwjaar', 'Unknown')
+                print(f"   {i+1}. {dist:.3f}km - {area:.0f}m² - Built {year}")
+            
+            # Step 7: Create enhanced response
+            text_description = self._create_address_centered_description(
+                final_buildings, location, loc_data, min_area_m2, max_features
+            )
             
             return {
                 "text_description": text_description,
@@ -162,7 +209,7 @@ class IntelligentPDOKBuildingTool(Tool):
             }
             
         except Exception as e:
-            error_msg = f"Intelligent PDOK tool error: {str(e)}"
+            error_msg = f"FIXED Intelligent PDOK tool error: {str(e)}"
             print(f"❌ {error_msg}")
             return {
                 "text_description": f"❌ Error retrieving buildings near {location}: {error_msg}",
@@ -170,152 +217,67 @@ class IntelligentPDOKBuildingTool(Tool):
                 "error": error_msg
             }
     
-    def _analyze_location_context(self, location: str) -> Dict:
-        """Analyze location to determine search context and strategy."""
+    def _analyze_location_context_fixed(self, location: str) -> Dict:
+        """FIXED: Better address pattern detection."""
         location_lower = location.lower()
         
-        # Check for specific address patterns
+        # Enhanced address patterns for Dutch addresses
         address_patterns = [
-            r'\d+.*\w+straat',  # "27 Kloosterstraat"  
-            r'\w+straat\s+\d+',  # "Kloosterstraat 27"
-            r'\w+weg\s+\d+',     # "Hoofdweg 123"
-            r'\w+laan\s+\d+',    # "Parklaan 45"
-            r'\w+plein\s+\d+',   # "Marktplein 12"
+            r'\w+straat\s+\d+',         # "springerlaan 37"
+            r'\d+\s+\w+straat',         # "37 springerlaan"  
+            r'\w+weg\s+\d+',            # "hoofdweg 123"
+            r'\w+laan\s+\d+',           # "parklaan 45" 
+            r'\w+plein\s+\d+',          # "marktplein 12"
+            r'\w+gracht\s+\d+',         # "keizersgracht 123"
+            r'\w+kade\s+\d+',           # "noorderkade 45"
+            r'\d+[a-z]?\s+\w+',         # "37a springerlaan"
         ]
         
         is_specific_address = any(re.search(pattern, location_lower) for pattern in address_patterns)
         
-        # Check for train stations
-        is_train_station = any(term in location_lower for term in [
-            'station', 'centraal', 'cs', 'train'
-        ])
-        
-        # Check for major cities
-        major_cities = [
-            'amsterdam', 'rotterdam', 'den haag', 'the hague', 'utrecht', 
-            'eindhoven', 'tilburg', 'groningen', 'almere', 'breda'
-        ]
-        is_major_city = any(city in location_lower for city in major_cities)
-        
-        # Check for historic search intent
-        is_historic_search = any(term in location_lower for term in [
-            'historic', 'old', 'ancient', 'medieval', 'centrum', 'binnenstad'
-        ])
-        
-        # Determine location type and strategy
         if is_specific_address:
+            print("🏠 DETECTED: Specific street address")
             return {
                 'type': 'specific_address',
-                'strategy': 'nearest',
-                'initial_radius': 0.5,  # 500m
+                'strategy': 'address_centered',
+                'initial_radius': 0.2,  # 200m for addresses
                 'expansion_factor': 1.5,
-                'max_radius': 5.0,
+                'max_radius': 2.0,      # Max 2km for addresses
                 'density_estimate': 'high',
                 'description': 'specific street address'
             }
-        
-        elif is_train_station:
-            return {
-                'type': 'transport_hub',
-                'strategy': 'nearest',
-                'initial_radius': 1.0,  # 1km
-                'expansion_factor': 1.8,
-                'max_radius': 10.0,
-                'density_estimate': 'very_high',
-                'description': 'train station area'
-            }
-        
-        elif is_major_city:
-            return {
-                'type': 'city',
-                'strategy': 'historic_priority' if is_historic_search else 'diverse_sample',
-                'initial_radius': 5.0,  # 5km for city center
-                'expansion_factor': 2.0,
-                'max_radius': 25.0,
-                'density_estimate': 'medium',
-                'description': 'major city'
-            }
-        
         else:
+            print("🏙️ DETECTED: General location (city/area)")
             return {
                 'type': 'general_location',
                 'strategy': 'nearest',
-                'initial_radius': 2.0,  # 2km
-                'expansion_factor': 1.8,
-                'max_radius': 15.0,
+                'initial_radius': 1.0,  # 1km for general locations
+                'expansion_factor': 2.0,
+                'max_radius': 10.0,
                 'density_estimate': 'medium',
                 'description': 'general location'
             }
     
-    def _calculate_intelligent_radius(self, location_context: Dict, max_features: int, 
-                                    min_year: Optional[int], max_year: Optional[int]) -> float:
-        """Calculate intelligent initial radius based on context and requirements."""
-        
-        base_radius = location_context['initial_radius']
-        
-        # Adjust for number of buildings requested
-        if max_features <= 5:
-            feature_factor = 0.8
-        elif max_features <= 10:
-            feature_factor = 1.0
-        elif max_features <= 20:
-            feature_factor = 1.5
-        else:
-            feature_factor = 2.0
-        
-        # Adjust for historic buildings (they're rarer)
-        age_factor = 1.0
-        if max_year and max_year < 1950:
-            age_factor = 2.0  # Historic buildings need larger search area
-            print(f"🏛️ Historic building search detected - expanding radius factor to {age_factor}x")
-        elif max_year and max_year < 1900:
-            age_factor = 3.0  # Very old buildings are very rare
-            print(f"🏺 Very old building search detected - expanding radius factor to {age_factor}x")
-        
-        # Adjust for location density estimate
-        density_factors = {
-            'very_high': 0.7,  # Dense areas like train stations
-            'high': 0.8,       # Urban addresses
-            'medium': 1.0,     # Regular areas
-            'low': 1.5         # Rural areas
-        }
-        
-        density_factor = density_factors.get(location_context['density_estimate'], 1.0)
-        
-        # Calculate final radius
-        calculated_radius = base_radius * feature_factor * age_factor * density_factor
-        
-        # Ensure within reasonable bounds
-        min_radius = 0.3  # Minimum 300m
-        max_radius = location_context['max_radius']
-        
-        final_radius = max(min_radius, min(calculated_radius, max_radius))
-        
-        print(f"🧮 Radius calculation:")
-        print(f"   Base: {base_radius}km")
-        print(f"   Feature factor ({max_features} buildings): {feature_factor}x")
-        print(f"   Age factor: {age_factor}x")
-        print(f"   Density factor: {density_factor}x")
-        print(f"   Final radius: {final_radius:.1f}km")
-        
-        return final_radius
-    
-    def _search_buildings_at_radius(self, lat: float, lon: float, radius_km: float,
-                                   max_features: int, min_year: Optional[int], 
-                                   max_year: Optional[int]) -> List[Dict]:
-        """Search for buildings at a specific radius."""
+    def _search_buildings_from_address(self, address_lat: float, address_lon: float, 
+                                     radius_km: float, max_features: int,
+                                     min_year: Optional[int], max_year: Optional[int]) -> List[Dict]:
+        """FIXED: Search buildings in radius FROM the specific address coordinates."""
         
         try:
-            # Convert to RD New for precise bbox calculation
-            center_x, center_y = self.transformer_to_rd.transform(lon, lat)
+            # Convert address coordinates to RD New for precise bbox
+            center_x, center_y = self.transformer_to_rd.transform(address_lon, address_lat)
             radius_m = radius_km * 1000
             
+            # Create bbox centered on the ADDRESS
             bbox = [
                 center_x - radius_m, center_y - radius_m,
                 center_x + radius_m, center_y + radius_m
             ]
             
-            # Build CQL filter for age requirements
+            print(f"🎯 Searching {radius_km:.1f}km radius from address ({address_lat:.6f}, {address_lon:.6f})")
+            print(f"📦 RD New bbox: {bbox[0]:.0f},{bbox[1]:.0f},{bbox[2]:.0f},{bbox[3]:.0f}")
+            
+            # Build age filters if specified
             cql_filters = []
             if min_year:
                 cql_filters.append(f"bouwjaar >= {min_year}")
@@ -338,6 +300,7 @@ class IntelligentPDOKBuildingTool(Tool):
             
             if cql_filter:
                 params['cql_filter'] = cql_filter
+                print(f"🗓️ Age filter: {cql_filter}")
             
             response = requests.get(self.base_url, params=params, timeout=30)
             response.raise_for_status()
@@ -346,19 +309,22 @@ class IntelligentPDOKBuildingTool(Tool):
             raw_features = data.get('features', [])
             processed_buildings = []
             
+            print(f"📦 PDOK returned {len(raw_features)} raw features")
+            
             for feature in raw_features:
-                processed_building = self._process_building_feature(feature)
+                processed_building = self._process_building_feature_fixed(feature)
                 if processed_building:
                     processed_buildings.append(processed_building)
             
+            print(f"✅ Processed {len(processed_buildings)} valid buildings")
             return processed_buildings
             
         except Exception as e:
-            print(f"❌ Error searching at radius {radius_km}km: {e}")
+            print(f"❌ Error searching buildings from address: {e}")
             return []
     
-    def _process_building_feature(self, feature: Dict) -> Optional[Dict]:
-        """Process individual building feature from PDOK."""
+    def _process_building_feature_fixed(self, feature: Dict) -> Optional[Dict]:
+        """FIXED: Process building with proper area calculation."""
         try:
             props = feature.get('properties', {})
             geometry = feature.get('geometry', {})
@@ -366,7 +332,7 @@ class IntelligentPDOKBuildingTool(Tool):
             if not geometry:
                 return None
             
-            # Calculate centroid and convert to WGS84
+            # Calculate centroid in RD New, then convert to WGS84
             centroid_rd = self._calculate_centroid_rd(geometry)
             if not centroid_rd:
                 return None
@@ -378,13 +344,18 @@ class IntelligentPDOKBuildingTool(Tool):
             # Convert geometry to WGS84
             wgs84_geometry = self._convert_geometry_to_wgs84(geometry)
             
-            # Extract building information
+            # Extract building information with better area handling
             building_id = props.get('identificatie', 'Unknown')
             building_year = props.get('bouwjaar')
             building_status = props.get('status', 'Unknown')
-            area_min = props.get('oppervlakte_min', 0)
-            area_max = props.get('oppervlakte_max', 0)
-            num_units = props.get('aantal_verblijfsobjecten', 0)
+            
+            # FIXED: Better area calculation from multiple sources
+            area_m2 = 0
+            for area_field in ['oppervlakte_max', 'oppervlakte_min']:
+                area_value = props.get(area_field)
+                if area_value and isinstance(area_value, (int, float)) and area_value > 0:
+                    area_m2 = float(area_value)
+                    break
             
             # Create building name
             building_name = f"Building {building_id[-6:]}" if len(building_id) > 6 else building_id
@@ -395,156 +366,85 @@ class IntelligentPDOKBuildingTool(Tool):
                 "name": building_name,
                 "lat": float(lat),
                 "lon": float(lon),
-                "description": "",  # Will be filled later with distance info
+                "description": "",  # Will be filled later
                 "geometry": wgs84_geometry,
                 "properties": {
                     **props,
-                    "area_m2": area_max or area_min,
+                    "area_m2": area_m2,
                     "centroid_lat": float(lat),
                     "centroid_lon": float(lon)
                 }
             }
             
         except Exception as e:
-            print(f"❌ Error processing building feature: {e}")
+            print(f"❌ Error processing building: {e}")
             return None
     
-    def _apply_search_strategy(self, buildings: List[Dict], max_features: int, 
-                             strategy: str, target_lat: float, target_lon: float) -> List[Dict]:
-        """Apply search strategy to select final buildings."""
-        
-        if len(buildings) <= max_features:
-            selected_buildings = buildings
-        else:
-            if strategy == "nearest":
-                # Always sort by distance first - THIS IS THE KEY FIX!
-                buildings.sort(key=lambda x: x.get('distance_km', 999))
-                selected_buildings = buildings[:max_features]
-                
-            elif strategy == "historic_priority":
-                # Prioritize older buildings, but still consider distance
-                buildings.sort(key=lambda x: (
-                    x.get('properties', {}).get('bouwjaar', 3000),  # Older first
-                    x.get('distance_km', 999)  # Then closer
-                ))
-                selected_buildings = buildings[:max_features]
-                
-            elif strategy == "diverse_sample":
-                # Mix of closest and historic buildings
-                buildings.sort(key=lambda x: x.get('distance_km', 999))
-                closest_half = buildings[:max_features//2]
-                
-                remaining = buildings[max_features//2:]
-                remaining.sort(key=lambda x: x.get('properties', {}).get('bouwjaar', 3000))
-                historic_half = remaining[:max_features - len(closest_half)]
-                
-                selected_buildings = closest_half + historic_half
-                
-            else:  # random or unknown strategy
-                buildings.sort(key=lambda x: x.get('distance_km', 999))
-                selected_buildings = buildings[:max_features]
-        
-        # Add distance descriptions
-        for i, building in enumerate(selected_buildings):
-            distance = building.get('distance_km', 0)
-            year = building.get('properties', {}).get('bouwjaar')
-            status = building.get('properties', {}).get('status', 'Unknown')
-            area = building.get('properties', {}).get('area_m2', 0)
-            units = building.get('properties', {}).get('aantal_verblijfsobjecten', 0)
-            
-            desc_parts = [f"Distance: {distance:.3f}km"]
-            if year:
-                age = 2024 - year
-                desc_parts.append(f"Built: {year} ({age} years old)")
-            if status and status != 'Unknown':
-                desc_parts.append(f"Status: {status}")
-            if area > 0:
-                desc_parts.append(f"Area: {area:.0f}m²")
-            if units > 0:
-                desc_parts.append(f"Units: {units}")
-            
-            building['description'] = " | ".join(desc_parts)
-        
-        return selected_buildings
-    
-    def _create_intelligent_description(self, buildings: List[Dict], location: str, 
-                                      loc_data: Dict, location_context: Dict,
-                                      strategy: str, max_features: int,
-                                      min_year: Optional[int], max_year: Optional[int]) -> str:
-        """Create intelligent description based on context."""
+    def _create_address_centered_description(self, buildings: List[Dict], location: str, 
+                                           loc_data: Dict, min_area_m2: Optional[float], 
+                                           max_features: int) -> str:
+        """Create description emphasizing address-centered search."""
         
         location_name = loc_data.get('name', location)
-        distances = [b.get('distance_km', 0) for b in buildings]
+        distances = [b.get('distance_from_address', 0) for b in buildings]
+        areas = [b.get('properties', {}).get('area_m2', 0) for b in buildings if b.get('properties', {}).get('area_m2', 0) > 0]
         years = [b.get('properties', {}).get('bouwjaar') for b in buildings if b.get('properties', {}).get('bouwjaar')]
         
         text_parts = []
         
-        # Context-aware title
-        if location_context['type'] == 'specific_address':
-            text_parts.append(f"## Buildings near {location_name} (Address-Based Search)")
-            text_parts.append(f"\nI found **{len(buildings)} buildings** near the specific address **{location_name}**, starting from the exact location and expanding outward.")
-        elif location_context['type'] == 'city':
-            text_parts.append(f"## Buildings in {location_name} (City-Wide Search)")
-            text_parts.append(f"\nI found **{len(buildings)} buildings** in **{location_name}** using intelligent city-scale search.")
+        # Address-focused title
+        text_parts.append(f"## Buildings near {location_name} (Address-Centered Search)")
+        
+        if min_area_m2:
+            text_parts.append(f"\nI found **{len(buildings)} buildings** near the specific address **{location_name}** with area ≥ {min_area_m2}m², sorted by distance from the exact address location.")
         else:
-            text_parts.append(f"## Buildings near {location_name}")
-            text_parts.append(f"\nI found **{len(buildings)} buildings** near **{location_name}** using intelligent proximity search.")
+            text_parts.append(f"\nI found **{len(buildings)} buildings** near the specific address **{location_name}**, sorted by distance from the exact address location.")
         
-        # Strategy explanation
-        strategy_descriptions = {
-            'nearest': 'sorted by distance from your specified location (closest first)',
-            'historic_priority': 'prioritizing historic buildings while considering proximity',
-            'diverse_sample': 'providing a diverse mix of nearby and historic buildings',
-            'random': 'with varied selection across the search area'
-        }
+        # Address details
+        if loc_data.get('description'):
+            text_parts.append(f"**Search center**: {loc_data['description']}")
         
-        strategy_desc = strategy_descriptions.get(strategy, 'using intelligent selection')
-        text_parts.append(f"**Selection strategy**: {strategy_desc}")
-        
-        # Distance and area information
+        # Distance information - key for address searches
         if distances:
             min_dist = min(distances)
             max_dist = max(distances)
             avg_dist = sum(distances) / len(distances)
-            text_parts.append(f"**Distance range**: {min_dist:.3f}km to {max_dist:.3f}km (average: {avg_dist:.3f}km)")
+            text_parts.append(f"**Distance from address**: {min_dist:.3f}km to {max_dist:.3f}km (average: {avg_dist:.3f}km)")
+        
+        # Area information if filtered
+        if min_area_m2 and areas:
+            avg_area = sum(areas) / len(areas)
+            max_area = max(areas)
+            text_parts.append(f"**Area statistics**: {min_area_m2:.0f}m² to {max_area:.0f}m² (average: {avg_area:.0f}m²)")
         
         # Age information
         if years:
-            min_year_found = min(years)
-            max_year_found = max(years)
+            min_year = min(years)
+            max_year = max(years)
             avg_year = sum(years) / len(years)
-            text_parts.append(f"**Construction period**: {min_year_found} to {max_year_found} (average: {avg_year:.0f})")
+            text_parts.append(f"**Construction period**: {min_year} to {max_year} (average: {avg_year:.0f})")
         
-        # Age filter information
-        if max_year:
-            age_requirement = 2024 - max_year
-            text_parts.append(f"**Age filter**: Buildings older than {age_requirement} years (built before {max_year + 1})")
-        
-        # Building list (showing progression from closest)
-        text_parts.append(f"\n**Buildings found (sorted by proximity)**:")
-        for i, building in enumerate(buildings[:8]):  # Show up to 8
+        # Building list (closest first - this is key!)
+        text_parts.append(f"\n**Closest buildings to {location_name} (distance order)**:")
+        for i, building in enumerate(buildings[:8]):
             props = building.get('properties', {})
-            year = props.get('bouwjaar', 'Unknown year')
+            year = props.get('bouwjaar', 'Unknown')
             area = props.get('area_m2', 0)
-            distance = building.get('distance_km', 0)
+            distance = building.get('distance_from_address', 0)
             
-            desc = f"{i+1}. **{building['name']}** - {distance:.3f}km away"
-            if year != 'Unknown year':
-                age = 2024 - year if isinstance(year, int) else 'Unknown'
-                desc += f", Built {year} ({age} years old)"
+            desc = f"{i+1}. **{building['name']}** - {distance:.3f}km from address"
             if area > 0:
                 desc += f", {area:.0f}m²"
+            if year != 'Unknown':
+                desc += f", Built {year}"
             
             text_parts.append(desc)
         
         if len(buildings) > 8:
             text_parts.append(f"... and {len(buildings) - 8} more buildings")
         
-        # Location details
-        if loc_data.get('description'):
-            text_parts.append(f"\n**Search center**: {loc_data['description']}")
-        
-        text_parts.append(f"\nAll **{len(buildings)} buildings** are displayed on the map, **starting from your specified location and expanding outward**. Click any building for detailed information.")
+        text_parts.append(f"\n**FIXED SEARCH LOGIC**: All buildings are selected based on proximity to the exact address '{location}' and sorted by distance. No random selection!")
+        text_parts.append(f"\nAll **{len(buildings)} buildings** are displayed on the map, starting from your address and expanding outward. Click any building for details.")
         
         return "\n".join(text_parts)
     

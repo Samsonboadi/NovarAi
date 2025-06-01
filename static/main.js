@@ -6,6 +6,159 @@ try {
     const container = document.getElementById('root');
     const root = ReactDOM.createRoot ? ReactDOM.createRoot(container) : null;
 
+    // Enhanced Area Legend Component
+    const AreaLegend = ({ features }) => {
+        // Check if we have area data
+        const hasAreaData = features.some(f => f.properties?.area_m2 && f.properties.area_m2 > 0);
+        
+        if (!hasAreaData) return null;
+        
+        return React.createElement('div', {
+            className: "area-legend",
+            style: {
+                position: 'fixed',
+                bottom: '280px', // Position above building age legend
+                left: '20px',
+                zIndex: 998,
+                maxWidth: '250px'
+            }
+        }, React.createElement('div', {
+            className: "floating-card px-3 py-2"
+        }, React.createElement('div', {
+            className: "text-xs"
+        }, [
+            React.createElement('p', {
+                key: 'title',
+                className: "font-medium text-gray-800 mb-2"
+            }, "Building Area Legend"),
+            React.createElement('div', {
+                key: 'legend-items',
+                className: "space-y-1"
+            }, [
+                React.createElement('div', {
+                    key: 'large',
+                    className: "flex items-center space-x-2"
+                }, [
+                    React.createElement('div', {
+                        key: 'color',
+                        className: "w-3 h-3 bg-red-600 rounded"
+                    }),
+                    React.createElement('span', {
+                        key: 'text',
+                        className: "text-gray-600"
+                    }, "Large (>1000m²)")
+                ]),
+                React.createElement('div', {
+                    key: 'medium',
+                    className: "flex items-center space-x-2"
+                }, [
+                    React.createElement('div', {
+                        key: 'color',
+                        className: "w-3 h-3 bg-orange-500 rounded"
+                    }),
+                    React.createElement('span', {
+                        key: 'text',
+                        className: "text-gray-600"
+                    }, "Medium (500-1000m²)")
+                ]),
+                React.createElement('div', {
+                    key: 'standard',
+                    className: "flex items-center space-x-2"
+                }, [
+                    React.createElement('div', {
+                        key: 'color',
+                        className: "w-3 h-3 bg-yellow-500 rounded"
+                    }),
+                    React.createElement('span', {
+                        key: 'text',
+                        className: "text-gray-600"
+                    }, "Standard (200-500m²)")
+                ]),
+                React.createElement('div', {
+                    key: 'small',
+                    className: "flex items-center space-x-2"
+                }, [
+                    React.createElement('div', {
+                        key: 'color',
+                        className: "w-3 h-3 bg-green-500 rounded"
+                    }),
+                    React.createElement('span', {
+                        key: 'text',
+                        className: "text-gray-600"
+                    }, "Small (<200m²)")
+                ])
+            ]),
+            React.createElement('div', {
+                key: 'note',
+                className: "mt-2 pt-2 border-t border-gray-200"
+            }, React.createElement('p', {
+                className: "text-xs text-gray-500"
+            }, "Colors show building sizes. Areas from PDOK BAG data."))
+        ])));
+    };
+
+    // Enhanced Map Statistics Component 
+    const EnhancedMapStatistics = ({ features }) => {
+        if (features.length === 0) return null;
+        
+        const years = features
+            .map(f => f.properties?.bouwjaar)
+            .filter(year => year && !isNaN(year));
+        
+        const areas = features
+            .map(f => f.properties?.area_m2)
+            .filter(area => area && area > 0);
+        
+        const distances = features
+            .map(f => f.properties?.distance_km)
+            .filter(dist => dist && dist > 0);
+        
+        return React.createElement('div', {
+            className: "map-statistics"
+        }, React.createElement('div', {
+            className: "floating-card px-4 py-3 max-w-xs"
+        }, React.createElement('div', {
+            className: "text-sm"
+        }, [
+            React.createElement('p', {
+                key: 'title',
+                className: "font-medium text-gray-800 mb-1"
+            }, "Search Results"),
+            React.createElement('p', {
+                key: 'count',
+                className: "text-gray-600"
+            }, `${features.length} buildings displayed`),
+            
+            // Area statistics
+            ...(areas.length > 0 ? [
+                React.createElement('p', {
+                    key: 'area-range',
+                    className: "text-gray-600"
+                }, `Area: ${Math.min(...areas).toLocaleString()}m² - ${Math.max(...areas).toLocaleString()}m²`),
+                React.createElement('p', {
+                    key: 'area-avg',
+                    className: "text-gray-600"
+                }, `Avg: ${Math.round(areas.reduce((sum, area) => sum + area, 0) / areas.length).toLocaleString()}m²`)
+            ] : []),
+            
+            // Distance statistics
+            ...(distances.length > 0 ? [
+                React.createElement('p', {
+                    key: 'distance',
+                    className: "text-gray-600"
+                }, `Distance: ${Math.min(...distances).toFixed(3)}km - ${Math.max(...distances).toFixed(3)}km`)
+            ] : []),
+            
+            // Year statistics
+            ...(years.length > 0 ? [
+                React.createElement('p', {
+                    key: 'years',
+                    className: "text-gray-600"
+                }, `Built: ${Math.min(...years)} - ${Math.max(...years)}`)
+            ] : [])
+        ])));
+    };
+
     const App = () => {
         console.log("Initializing Map-Aware React component with fixed layout");
         
@@ -14,7 +167,7 @@ try {
         const [messages, setMessages] = useState([
             {
                 type: 'assistant',
-                content: 'Hello! I\'m your map-aware AI assistant for exploring Dutch geographic data. I can analyze what\'s currently on the map, answer GIS questions, find buildings, and provide spatial insights. Ask me anything about maps or geography!',
+                content: 'Hello! I\'m your map-aware AI assistant. I now use proper address-centered search! Try: "Show me buildings near Leonard Springerlaan 37, Groningen with area > 300m²"',
                 timestamp: new Date()
             }
         ]);
@@ -349,7 +502,7 @@ try {
                 return;
             }
 
-            console.log(`Updating map with ${data.length} features (enhanced visibility)`);
+            console.log(`Updating map with ${data.length} features (enhanced with area styling)`);
             
             // Remove existing vector layers
             const layersToRemove = [];
@@ -375,7 +528,7 @@ try {
                     console.log(`Processing feature ${index + 1}/${data.length}:`);
                     console.log(`  Name: ${f.name}`);
                     console.log(`  Coordinates: ${f.lat}, ${f.lon}`);
-                    console.log(`  Geometry type: ${f.geometry?.type}`);
+                    console.log(`  Area: ${f.properties?.area_m2 || 'N/A'}m²`);
                     
                     if (!f.geometry || !f.lat || !f.lon) {
                         console.warn(`  Skipping feature ${index + 1}: missing geometry or coordinates`);
@@ -484,7 +637,7 @@ try {
                 return;
             }
 
-            // ENHANCED STYLING WITH BETTER VISIBILITY (LESS TRANSPARENT)
+            // ENHANCED STYLING WITH AREA-BASED COLORS
             const vectorLayer = new ol.layer.Vector({
                 source: vectorSource,
                 style: feature => {
@@ -494,30 +647,64 @@ try {
                     console.log(`Styling ${geomType} feature: ${feature.get('name')}`);
                     
                     if (geomType === 'Point') {
+                        // Area-based colors for points
+                        const area = props.area_m2 || 0;
+                        let pointColor = '#667eea'; // Default blue
+                        
+                        if (area > 1000) {
+                            pointColor = '#dc2626'; // Large: red
+                        } else if (area > 500) {
+                            pointColor = '#f97316'; // Medium: orange
+                        } else if (area > 200) {
+                            pointColor = '#eab308'; // Standard: yellow
+                        } else if (area > 0) {
+                            pointColor = '#22c55e'; // Small: green
+                        }
+                        
                         return new ol.style.Style({
                             image: new ol.style.Circle({
-                                radius: 10,  // Increased size
-                                fill: new ol.style.Fill({ color: '#667eea' }),
-                                stroke: new ol.style.Stroke({ color: '#ffffff', width: 3 })  // Thicker stroke
+                                radius: 12,  // Larger for visibility
+                                fill: new ol.style.Fill({ color: pointColor }),
+                                stroke: new ol.style.Stroke({ color: '#ffffff', width: 3 })
                             })
                         });
+                        
                     } else if (geomType === 'Polygon') {
                         const year = props.bouwjaar;
-                        let fillColor = 'rgba(102, 126, 234, 0.7)';  // INCREASED OPACITY from 0.3 to 0.7
+                        const area = props.area_m2 || 0;
+                        
+                        let fillColor = 'rgba(102, 126, 234, 0.7)'; // Default blue
                         let strokeColor = '#667eea';
                         
-                        if (year) {
+                        // PRIORITY 1: Color by area if available and user searched by area
+                        if (area > 0) {
+                            if (area > 1000) {
+                                fillColor = 'rgba(220, 38, 38, 0.8)';    // Large buildings: red
+                                strokeColor = '#dc2626';
+                            } else if (area > 500) {
+                                fillColor = 'rgba(249, 115, 22, 0.8)';   // Medium buildings: orange
+                                strokeColor = '#f97316';
+                            } else if (area > 200) {
+                                fillColor = 'rgba(234, 179, 8, 0.8)';    // Standard buildings: yellow
+                                strokeColor = '#eab308';
+                            } else {
+                                fillColor = 'rgba(34, 197, 94, 0.8)';    // Small buildings: green
+                                strokeColor = '#22c55e';
+                            }
+                        }
+                        // FALLBACK: Color by age if no area data
+                        else if (year) {
                             if (year < 1900) {
-                                fillColor = 'rgba(139, 0, 0, 0.7)';      // Historic: dark red, more opaque
+                                fillColor = 'rgba(139, 0, 0, 0.7)';      // Historic: dark red
                                 strokeColor = '#8B0000';
                             } else if (year < 1950) {
-                                fillColor = 'rgba(255, 69, 0, 0.7)';     // Early modern: orange, more opaque
+                                fillColor = 'rgba(255, 69, 0, 0.7)';     // Early modern: orange
                                 strokeColor = '#FF4500';
                             } else if (year < 2000) {
-                                fillColor = 'rgba(50, 205, 50, 0.7)';    // Mid-century: green, more opaque
+                                fillColor = 'rgba(50, 205, 50, 0.7)';    // Mid-century: green
                                 strokeColor = '#32CD32';
                             } else {
-                                fillColor = 'rgba(30, 144, 255, 0.7)';   // Modern: blue, more opaque
+                                fillColor = 'rgba(30, 144, 255, 0.7)';   // Modern: blue
                                 strokeColor = '#1E90FF';
                             }
                         }
@@ -525,23 +712,24 @@ try {
                         return new ol.style.Style({
                             stroke: new ol.style.Stroke({ 
                                 color: strokeColor, 
-                                width: 3  // Increased from 2 to 3
+                                width: 3
                             }),
                             fill: new ol.style.Fill({ 
-                                color: fillColor  // Much more opaque now
+                                color: fillColor
                             })
                         });
+                        
                     } else if (geomType === 'LineString') {
                         return new ol.style.Style({
                             stroke: new ol.style.Stroke({ 
                                 color: '#667eea', 
-                                width: 4  // Increased from 3 to 4
+                                width: 4
                             })
                         });
                     } else {
                         return new ol.style.Style({
                             stroke: new ol.style.Stroke({ color: '#667eea', width: 3 }),
-                            fill: new ol.style.Fill({ color: 'rgba(102, 126, 234, 0.6)' }),  // More opaque
+                            fill: new ol.style.Fill({ color: 'rgba(102, 126, 234, 0.6)' }),
                             image: new ol.style.Circle({
                                 radius: 8,
                                 fill: new ol.style.Fill({ color: '#667eea' }),
@@ -553,7 +741,7 @@ try {
             });
 
             mapInstance.current.addLayer(vectorLayer);
-            console.log("Enhanced visibility vector layer added to map");
+            console.log("Enhanced area-based styling vector layer added to map");
             
             // Fit to features
             const extent = vectorSource.getExtent();
@@ -586,7 +774,7 @@ try {
                 {/* Map Container */}
                 <div ref={mapRef} className="h-full w-full"></div>
                 
-                {/* FIXED: Map Controls - Top Right (no change needed) */}
+                {/* Map Controls - Top Right */}
                 <div className="absolute top-4 right-4 z-40">
                     <div className="floating-card p-2">
                         <div className="flex space-x-2">
@@ -614,7 +802,7 @@ try {
                     </div>
                 </div>
 
-                {/* FIXED: Map Context Info - Moved down to avoid zoom controls */}
+                {/* Map Context Info */}
                 <div className="absolute top-20 left-4 z-40 map-context-info">
                     <div className="floating-card p-3">
                         <div className="text-sm text-gray-700">
@@ -636,8 +824,8 @@ try {
                             <div className="flex items-center space-x-3">
                                 <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse-slow"></div>
                                 <div>
-                                    <h2 className="text-lg font-semibold text-white">Map-Aware AI Assistant</h2>
-                                    <p className="text-sm text-blue-100">Agent-powered spatial analysis</p>
+                                    <h2 className="text-lg font-semibold text-white">Map Aware Agentic mapper </h2>
+                                    <p className="text-sm text-blue-100">Intelligent Agent Mapping System</p>
                                 </div>
                             </div>
                             <button 
@@ -671,7 +859,7 @@ try {
                                             <span></span>
                                             <span></span>
                                         </div>
-                                        <p className="text-xs opacity-75 mt-1">Agent processing...</p>
+                                        <p className="text-xs opacity-75 mt-1">FIXED agent processing...</p>
                                     </div>
                                 </div>
                             )}
@@ -679,33 +867,32 @@ try {
                             <div ref={messagesEndRef} />
                         </div>
 
-                        {/* Enhanced Input Area with Agent-focused Suggestions */}
+                        {/* Enhanced Input Area with FIXED prompts */}
                         <div className="p-4 border-t border-gray-200">
-                            {/* Quick Action Buttons */}
                             <div className="flex flex-wrap gap-2 mb-3">
                                 <button
-                                    onClick={() => setQuery("Show buildings in Amsterdam")}
-                                    className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded-full hover:bg-blue-200 transition-colors"
-                                >
-                                    Find Buildings
-                                </button>
-                                <button
-                                    onClick={() => setQuery("Analyze what's currently on the map")}
+                                    onClick={() => setQuery("Show me buildings near Leonard Springerlaan 37, Groningen with area > 300m²")}
                                     className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded-full hover:bg-green-200 transition-colors"
                                 >
-                                    Analyze Map
+                                    Address Search
                                 </button>
                                 <button
-                                    onClick={() => setQuery("Show historic buildings in Utrecht")}
+                                    onClick={() => setQuery("Find buildings near Amsterdam Centraal larger than 500m²")}
+                                    className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded-full hover:bg-blue-200 transition-colors"
+                                >
+                                    Station Area
+                                </button>
+                                <button
+                                    onClick={() => setQuery("Show historic buildings near Groningen station built before 1950")}
                                     className="px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded-full hover:bg-purple-200 transition-colors"
                                 >
                                     Historic Search
                                 </button>
                                 <button
-                                    onClick={() => setQuery("What is PDOK and how does it work?")}
+                                    onClick={() => setQuery("What's fixed in the new address-centered search?")}
                                     className="px-2 py-1 text-xs bg-orange-100 text-orange-700 rounded-full hover:bg-orange-200 transition-colors"
                                 >
-                                    GIS Help
+                                    What's Fixed?
                                 </button>
                             </div>
                             
@@ -716,7 +903,7 @@ try {
                                     onChange={e => setQuery(e.target.value)}
                                     onKeyPress={handleKeyPress}
                                     className="flex-1 search-input rounded-xl px-4 py-2 text-sm focus:outline-none"
-                                    placeholder="Ask the agent to find buildings, analyze data, or answer GIS questions..."
+                                    placeholder="Try: 'buildings near [address] with area > 300m²' - now FIXED!"
                                     disabled={isLoading}
                                 />
                                 <button
@@ -746,44 +933,21 @@ try {
                                     {features.length}
                                 </div>
                             )}
+                            {/* FIXED indicator */}
+                            <div className="absolute -bottom-3 -right-3 bg-green-500 text-white text-xs rounded-full px-2 py-1 font-bold">
+                                AGENT
+                            </div>
                         </div>
                     </button>
                 )}
 
-                {/* FIXED: Map Statistics - Positioned to avoid overlaps */}
-                {features.length > 0 && (
-                    <div className="map-statistics">
-                        <div className="floating-card px-4 py-3 max-w-xs">
-                            <div className="text-sm">
-                                <p className="font-medium text-gray-800 mb-1">Map Statistics</p>
-                                <p className="text-gray-600">{features.length} features displayed</p>
-                                {(() => {
-                                    const years = features
-                                        .map(f => f.properties?.bouwjaar)
-                                        .filter(year => year && !isNaN(year));
-                                    
-                                    const totalArea = features
-                                        .reduce((sum, f) => sum + (f.properties?.area_m2 || 0), 0);
-                                    
-                                    if (years.length > 0) {
-                                        const avgYear = Math.round(years.reduce((sum, year) => sum + year, 0) / years.length);
-                                        return (
-                                            <>
-                                                <p className="text-gray-600">Avg. year: {avgYear}</p>
-                                                {totalArea > 0 && (
-                                                    <p className="text-gray-600">Total area: {Math.round(totalArea).toLocaleString()}m²</p>
-                                                )}
-                                            </>
-                                        );
-                                    }
-                                    return null;
-                                })()}
-                            </div>
-                        </div>
-                    </div>
-                )}
+                {/* REPLACE YOUR OLD MAP STATISTICS WITH THIS: */}
+                {React.createElement(EnhancedMapStatistics, { features: features })}
 
-                {/* FIXED: Legend for Building Colors - Positioned to avoid Map Statistics */}
+                {/* ADD THE NEW AREA LEGEND: */}
+                {React.createElement(AreaLegend, { features: features })}
+
+                {/* KEEP YOUR EXISTING BUILDING AGE LEGEND: */}
                 {features.some(f => f.properties?.bouwjaar) && (
                     <div className="building-legend">
                         <div className="floating-card px-3 py-2">
@@ -807,6 +971,34 @@ try {
                                         <span className="text-gray-600">Contemporary (2000+)</span>
                                     </div>
                                 </div>
+                                <div className="mt-2 pt-2 border-t border-gray-200">
+                                    <p className="text-xs text-gray-500">
+                                        {features.some(f => f.properties?.area_m2 > 0) 
+                                            ? "Showing age colors when no area data available" 
+                                            : "Colors show building construction periods"
+                                        }
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Address Center Indicator (NEW) */}
+                {features.length > 0 && features.some(f => f.properties?.distance_km !== undefined) && (
+                    <div style={{
+                        position: 'fixed',
+                        top: '50%',
+                        right: '20px',
+                        transform: 'translateY(-50%)',
+                        zIndex: 999
+                    }}>
+                        <div className="floating-card px-3 py-2 bg-green-50 border-green-200">
+                            <div className="text-xs text-green-800">
+                                <p className="font-medium">✅ FIXED!</p>
+                                <p>Address-centered search</p>
+                                <p>Sorted by distance</p>
+                                <p>No random selection</p>
                             </div>
                         </div>
                     </div>
@@ -818,9 +1010,9 @@ try {
     console.log("Rendering Map-Aware React app with Fixed Layout");
     
     if (root) {
-        root.render(<App />);
+        root.render(React.createElement(App));
     } else {
-        ReactDOM.render(<App />, container);
+        ReactDOM.render(React.createElement(App), container);
     }
     
 } catch (error) {
