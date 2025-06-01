@@ -417,6 +417,7 @@ class PDOKDataFilterTool(Tool):
     """
     Filter and process PDOK data results based on various criteria.
     This tool works with the raw data from PDOKDataRequestTool.
+    FIXED: Proper handling of None values in area and year comparisons.
     """
     
     name = "filter_pdok_data"
@@ -439,11 +440,11 @@ class PDOKDataFilterTool(Tool):
     def forward(self, features, center_lat=None, center_lon=None, max_distance_km=None,
                 min_year=None, max_year=None, min_area_m2=None, max_area_m2=None,
                 sort_by="distance", limit=20):
-        """Filter and process PDOK features."""
+        """Filter and process PDOK features with proper None value handling."""
         try:
             print(f"🔽 Filtering PDOK data")
             
-            # FIXED: Handle different input formats correctly
+            # Handle different input formats correctly
             if isinstance(features, dict):
                 if 'features' in features:
                     feature_list = features['features']
@@ -484,11 +485,11 @@ class PDOKDataFilterTool(Tool):
                             if centroid:
                                 feat_lon, feat_lat = centroid
                         
-                        # Apply filters
+                        # Apply filters with proper None handling
                         passes_filters = True
                         filter_reasons = []
                         
-                        # FIXED: Distance filter with proper calculation
+                        # Distance filter with proper calculation
                         distance_km = None
                         if center_lat and center_lon and feat_lat != 0 and feat_lon != 0:
                             distance_km = self._haversine_distance(center_lat, center_lon, feat_lat, feat_lon)
@@ -497,9 +498,10 @@ class PDOKDataFilterTool(Tool):
                                 passes_filters = False
                                 filter_reasons.append(f"distance {distance_km:.2f}km > {max_distance_km}km")
                         
-                        # Year filters
+                        # FIXED: Year filters with None handling
                         building_year = properties.get('bouwjaar')
-                        if building_year:
+                        if building_year is not None and isinstance(building_year, (int, float)):
+                            building_year = int(building_year)
                             if min_year and building_year < min_year:
                                 passes_filters = False
                                 filter_reasons.append(f"year {building_year} < {min_year}")
@@ -507,17 +509,35 @@ class PDOKDataFilterTool(Tool):
                             if max_year and building_year > max_year:
                                 passes_filters = False
                                 filter_reasons.append(f"year {building_year} > {max_year}")
+                        else:
+                            # If year filtering is requested but building has no year, exclude it
+                            if min_year or max_year:
+                                passes_filters = False
+                                filter_reasons.append(f"no year data (required for age filter)")
+                                building_year = None
                         
-                        # Area filters
-                        area_m2 = properties.get('oppervlakte_min') or properties.get('area_m2')
-                        if area_m2:
+                        # FIXED: Area filters with None handling
+                        area_m2 = None
+                        # Try multiple area fields
+                        for area_field in ['oppervlakte_min', 'oppervlakte_max', 'area_m2']:
+                            area_value = properties.get(area_field)
+                            if area_value is not None and isinstance(area_value, (int, float)) and area_value > 0:
+                                area_m2 = float(area_value)
+                                break
+                        
+                        if area_m2 is not None:
                             if min_area_m2 and area_m2 < min_area_m2:
                                 passes_filters = False
-                                filter_reasons.append(f"area {area_m2}m² < {min_area_m2}m²")
+                                filter_reasons.append(f"area {area_m2:.0f}m² < {min_area_m2}m²")
                             
                             if max_area_m2 and area_m2 > max_area_m2:
                                 passes_filters = False
-                                filter_reasons.append(f"area {area_m2}m² > {max_area_m2}m²")
+                                filter_reasons.append(f"area {area_m2:.0f}m² > {max_area_m2}m²")
+                        else:
+                            # If area filtering is requested but building has no area, exclude it
+                            if min_area_m2 or max_area_m2:
+                                passes_filters = False
+                                filter_reasons.append(f"no area data (required for area filter)")
                         
                         if passes_filters:
                             # Add computed fields
@@ -534,11 +554,15 @@ class PDOKDataFilterTool(Tool):
                             
                             if i < 5:  # Debug first few
                                 feature_id = properties.get('identificatie', f'Feature_{i+1}')
-                                print(f"   ✅ Feature {feature_id}: distance={distance_km:.3f if distance_km else 'N/A'}km, year={building_year}")
+                                if len(feature_id) > 10:
+                                    feature_id = feature_id[-6:]
+                                print(f"   ✅ Feature {feature_id}: distance={distance_km:.3f if distance_km else 'N/A'}km, year={building_year}, area={area_m2:.0f if area_m2 else 'N/A'}m²")
                         
                         else:
                             if i < 5:  # Debug rejections
                                 feature_id = properties.get('identificatie', f'Feature_{i+1}')
+                                if len(feature_id) > 10:
+                                    feature_id = feature_id[-6:]
                                 print(f"   ❌ Rejected {feature_id}: {', '.join(filter_reasons)}")
                     
                 except Exception as e:
@@ -547,13 +571,13 @@ class PDOKDataFilterTool(Tool):
             
             print(f"📊 Filtered to {len(filtered_features)} features")
             
-            # Sort results
+            # Sort results with proper None handling
             if sort_by == "distance" and center_lat and center_lon:
-                filtered_features.sort(key=lambda x: x.get('distance_km', 999))
+                filtered_features.sort(key=lambda x: x.get('distance_km') if x.get('distance_km') is not None else 999)
             elif sort_by == "age" or sort_by == "year":
-                filtered_features.sort(key=lambda x: x.get('building_year', 0))
+                filtered_features.sort(key=lambda x: x.get('building_year') if x.get('building_year') is not None else 0)
             elif sort_by == "area":
-                filtered_features.sort(key=lambda x: x.get('area_m2', 0), reverse=True)
+                filtered_features.sort(key=lambda x: x.get('area_m2') if x.get('area_m2') is not None else 0, reverse=True)
             
             # Apply limit
             if limit and len(filtered_features) > limit:
@@ -588,6 +612,7 @@ class PDOKDataFilterTool(Tool):
                 print(f"⚠️  Zero coordinates detected in distance calculation")
                 return 999.0
             
+            import math
             R = 6371  # Earth's radius in kilometers
             
             lat1_rad = math.radians(lat1)
@@ -638,6 +663,7 @@ class PDOKDataFilterTool(Tool):
         except Exception:
             return None
 
+            
 class PDOKMapDisplayTool(Tool):
     """
     Format filtered PDOK data for map display with proper descriptions and metadata.
