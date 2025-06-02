@@ -6,7 +6,7 @@ try {
     const container = document.getElementById('root');
     const root = ReactDOM.createRoot ? ReactDOM.createRoot(container) : null;
 
-    // FIXED: Simple but robust Legend Component (based on working test)
+    // Simple but robust Legend Component (based on working test)
     const SmartLegend = ({ features }) => {
         console.log("SmartLegend rendering with features:", features?.length || 0);
         
@@ -15,7 +15,7 @@ try {
             return null;
         }
         
-        // FIXED: Check for area data more robustly
+        // Check for area data more robustly
         const hasAreaData = features.some(f => {
             if (!f.properties) return false;
             const area = f.properties.area_m2 || f.properties.oppervlakte_max || f.properties.oppervlakte_min;
@@ -183,7 +183,7 @@ try {
         return null;
     };
 
-    // FIXED: Simple but robust Statistics Component (based on working test)
+    // Simple but robust Statistics Component (based on working test)
     const EnhancedMapStatistics = ({ features }) => {
         console.log("EnhancedMapStatistics rendering with features:", features?.length || 0);
         
@@ -192,7 +192,7 @@ try {
             return null;
         }
         
-        // FIXED: Safer data extraction
+        // Safer data extraction
         const years = features
             .map(f => f.properties?.bouwjaar)
             .filter(year => year && !isNaN(year) && year > 1800);
@@ -289,7 +289,8 @@ try {
         const [messages, setMessages] = useState([
             {
                 type: 'assistant',
-                content: 'Hello! I\'m your FIXED map-aware AI assistant with working location pin and legends! Try: "Show me buildings near Leonard Springerlaan 37, Groningen with area > 300m²"',
+                content: 'Hello! I\'m your map-aware AI Agent.\nI can help you explore buildings around any location and answer questions about them.\n\n🧭 Try asking:\n“Show me buildings near Leonard Springerlaan 37, Groningen.”\n\n📐 Or get specific:\n“Show me buildings near Leonard Springerlaan 37, Groningen with area > 300m².”'
+,
                 timestamp: new Date()
             }
         ]);
@@ -333,7 +334,7 @@ try {
 
         // Initialize OpenLayers map
         useEffect(() => {
-            console.log("Setting up FIXED OpenLayers map");
+            console.log("Setting up OpenLayers map");
             try {
                 // Base layers
                 const osmLayer = new ol.layer.Tile({
@@ -395,7 +396,7 @@ try {
                 });
                 mapInstance.current.addOverlay(overlayRef.current);
 
-                // FIXED: Create location pin with inline styles (like working test)
+                // Create location pin with inline styles (like working test)
                 const pinContainer = document.createElement('div');
                 pinContainer.style.cssText = `
                     pointer-events: none;
@@ -527,7 +528,7 @@ try {
                     }
                 });
 
-                console.log("✅ FIXED map setup complete");
+                console.log("✅ map setup complete");
 
                 return () => {
                     if (mapInstance.current) {
@@ -542,7 +543,7 @@ try {
         // Show pin when searchLocation is set
         useEffect(() => {
             if (searchLocation && locationPinRef.current && mapInstance.current) {
-                console.log(`📍 FIXED: Adding location pin at: ${searchLocation.lat}, ${searchLocation.lon}`);
+                console.log(`📍 Adding location pin at: ${searchLocation.lat}, ${searchLocation.lon}`);
                 const pinCoords = ol.proj.fromLonLat([searchLocation.lon, searchLocation.lat]);
                 locationPinRef.current.setPosition(pinCoords);
             }
@@ -988,8 +989,8 @@ try {
                             <div className="flex items-center space-x-3">
                                 <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse-slow"></div>
                                 <div>
-                                    <h2 className="text-lg font-semibold text-white">FIXED Map Assistant</h2>
-                                    <p className="text-sm text-blue-100">Pin + Legends Working</p>
+                                    <h2 className="text-lg font-semibold text-white">Agentic Mapper</h2>
+                                    <p className="text-sm text-blue-100">Agent Mapping Assistant</p>
                                 </div>
                             </div>
                             <button 
@@ -1023,7 +1024,7 @@ try {
                                             <span></span>
                                             <span></span>
                                         </div>
-                                        <p className="text-xs opacity-75 mt-1">FIXED system processing...</p>
+                                        <p className="text-xs opacity-75 mt-1">Agent processing...</p>
                                     </div>
                                 </div>
                             )}
@@ -1041,22 +1042,22 @@ try {
                                     📍 Address + Pin
                                 </button>
                                 <button
-                                    onClick={() => setQuery("Find buildings near Amsterdam Centraal larger than 500m²")}
+                                    onClick={() => setQuery("Find buildings that are 500 meters away from Amsterdam Centraal larger than 500m²")}
                                     className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded-full hover:bg-blue-200 transition-colors"
                                 >
                                     🚉 Station Area
                                 </button>
                                 <button
-                                    onClick={() => setQuery("Show historic buildings near Groningen station built before 1950")}
+                                    onClick={() => setQuery("Show historic buildings that are between 200 meters away from Groningen train station built before 1950")}
                                     className="px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded-full hover:bg-purple-200 transition-colors"
                                 >
                                     🏛️ Historic Search
                                 </button>
                                 <button
-                                    onClick={() => setQuery("Test the fixed legend and pin system")}
+                                    onClick={() => setQuery("Show me 100 buildings that are 500 meters away from  Leonard Springerlaan 37, Groningen with area > 150m²")}
                                     className="px-2 py-1 text-xs bg-orange-100 text-orange-700 rounded-full hover:bg-orange-200 transition-colors"
                                 >
-                                    ✅ Test Fixed
+                                    ✅ Test
                                 </button>
                             </div>
                             
@@ -1067,7 +1068,7 @@ try {
                                     onChange={e => setQuery(e.target.value)}
                                     onKeyPress={handleKeyPress}
                                     className="flex-1 search-input rounded-xl px-4 py-2 text-sm focus:outline-none"
-                                    placeholder="FIXED: Pin + Legends now working! 📍🏠📊"
+                                    placeholder="Pin + Legends now working! 📍🏠📊"
                                     disabled={isLoading}
                                 />
                                 <button
@@ -1106,10 +1107,10 @@ try {
                     </button>
                 )}
 
-                {/* FIXED: Statistics Component (using inline styles) */}
+                {/* Statistics Component (using inline styles) */}
                 {React.createElement(EnhancedMapStatistics, { features: features })}
 
-                {/* FIXED: Smart Legend Component (using inline styles) */}
+                {/* Smart Legend Component (using inline styles) */}
                 {React.createElement(SmartLegend, { features: features })}
 
                 {/* Status Indicator */}
@@ -1128,7 +1129,7 @@ try {
                         color: '#15803d'
                     }}>
                         <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>
-                            ✅ SYSTEM FIXED!
+                            ✅ SYSTEM READY!
                         </div>
                         <div>📍 Pin: {searchLocation ? '✅' : '❌'}</div>
                         <div>🏠 Legend: ✅</div>
@@ -1140,7 +1141,7 @@ try {
         );
     };
 
-    console.log("Rendering FIXED Production Map-Aware React app");
+    console.log("Rendering Production Map-Aware React app");
     
     if (root) {
         root.render(React.createElement(App));
@@ -1149,5 +1150,5 @@ try {
     }
     
 } catch (error) {
-    console.error("Failed to initialize FIXED Production React app:", error);
+    console.error("Failed to initialize  Production React app:", error);
 }

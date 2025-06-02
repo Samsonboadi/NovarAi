@@ -485,31 +485,31 @@ def query():
         
         # Create context-aware prompt
         context_prompt = f"""
-User query: "{query_text}"
+        User query: "{query_text}"
 
-Current map context:
-- Map center: {map_center[1]:.4f}°N, {map_center[0]:.4f}°E  
-- Zoom level: {map_zoom}
-- Features on map: {len(current_features)}
+        Current map context:
+        - Map center: {map_center[1]:.4f}°N, {map_center[0]:.4f}°E  
+        - Zoom level: {map_zoom}
+        - Features on map: {len(current_features)}
 
-IMPORTANT: The system now uses FLEXIBLE MODULAR PDOK TOOLS:
+        IMPORTANT: The system now uses FLEXIBLE MODULAR PDOK TOOLS:
 
-1. discover_pdok_services: Find available PDOK WFS services and layers
-2. request_pdok_data: Make flexible WFS requests to any PDOK service
-3. filter_pdok_data: Apply distance, age, area, and other filters
-4. format_pdok_for_map: Format results for map display
-5. get_pdok_buildings_flexible: Combined tool for building searches
+        1. discover_pdok_services: Find available PDOK WFS services and layers
+        2. request_pdok_data: Make flexible WFS requests to any PDOK service
+        3. filter_pdok_data: Apply distance, age, area, and other filters
+        4. format_pdok_for_map: Format results for map display
+        5. get_pdok_buildings_flexible: Combined tool for building searches
 
-WORKFLOW for building searches:
-- Use get_pdok_buildings_flexible for simple building queries
-- For complex queries, use the individual tools in sequence
-- The tools can handle any PDOK layer, not just buildings
+        WORKFLOW for building searches:
+        - Use get_pdok_buildings_flexible for simple building queries
+        - For complex queries, use the individual tools in sequence
+        - The tools can handle any PDOK layer, not just buildings
 
-For GEOGRAPHIC queries: Use tools and return JSON with text_description and geojson_data
-For GENERAL questions: Simply answer the question with plain text using final_answer()
+        For GEOGRAPHIC queries: Use tools and return JSON with text_description and geojson_data
+        For GENERAL questions: Simply answer the question with plain text using final_answer()
 
-Please respond to the user's query appropriately based on the query type.
-"""
+        Please respond to the user's query appropriately based on the query type.
+        """
         
         result = agent.run(context_prompt)
         
@@ -800,6 +800,8 @@ def test_pdok_services():
             "success": False,
             "error": str(e)
         })
+
+
 
 @app.route('/api/test-flexible-buildings', methods=['POST'])
 def test_flexible_buildings():
