@@ -1,4 +1,4 @@
-# app.py - Fixed with Proper Tool Docstrings for Flexible PDOK Tools
+# app.py 
 
 import os
 import json
@@ -15,7 +15,12 @@ from datetime import datetime
 # Import the enhanced PDOK location functionality
 from tools.pdok_location import find_location_coordinates, search_dutch_address_pdok, pdok_service, test_pdok_integration
 from tools.kadaster_tool import KadasterBRKTool, ContactHistoryTool
-from tools.intelligent_pdok_building_tool import IntelligentPDOKBuildingTool
+
+#Import the new intelligent PDOK agent 
+from tools.pdok_intelligent_agent_tool import PDOKIntelligentAgentTool, EnhancedPDOKServiceDiscoveryTool
+
+# Test the PDOK integration
+test_pdok_integration()
 
 
 # Import the NEW flexible PDOK tools
@@ -373,30 +378,19 @@ def validate_and_fix_geometry(geometry):
         return None
 
 def create_agent_with_yaml_prompt():
-    """Create the map-aware agent with YAML system prompt configuration and flexible PDOK tools.
+    """Create the map-aware agent with WORKING tools and CORRECT system prompt."""
     
-    Returns:
-        Configured agent with YAML system prompt and flexible PDOK tools
-    """
-    
-    # Load system prompt from YAML file
-    system_prompt_config = load_system_prompt("static/system_prompt.yml")
-    
-    # Create tools - Now with FLEXIBLE PDOK TOOLS
+    # WORKING TOOLS - using correct names
     tools = [
-        find_location_coordinates,        # Enhanced with PDOK Locatieserver
-        search_dutch_address_pdok,       # Specialized address search  
+        find_location_coordinates,        # This works (as shown in logs)
+        search_dutch_address_pdok,       
         analyze_current_map_features,
         get_map_context_info,
         answer_map_question,
-        IntelligentPDOKBuildingTool(),   # NEW: Primary intelligent building search tool
         
-        # Keep flexible tools as backup/advanced options
-        PDOKServiceDiscoveryTool(),      # Service discovery
-        PDOKDataRequestTool(),           # Advanced WFS requests
-        PDOKDataFilterTool(),            # Advanced filtering
-        PDOKMapDisplayTool(),            # Advanced display formatting
-        PDOKBuildingsFlexibleTool(),     # Backup combined tool
+        # CRITICAL: Add the working PDOK tools
+        PDOKIntelligentAgentTool(),           # Tool name: pdok_intelligent_agent
+        EnhancedPDOKServiceDiscoveryTool(),   # Tool name: discover_pdok_services_enhanced
         
         # Other tools
         DuckDuckGoSearchTool(),
@@ -404,7 +398,7 @@ def create_agent_with_yaml_prompt():
         KadasterBRKTool()
     ]
 
-    print("🔧 Creating agent with FLEXIBLE PDOK TOOLS:")
+    print("🔧 Creating agent with WORKING PDOK TOOLS:")
     for tool in tools:
         if hasattr(tool, 'name'):
             tool_name = tool.name
@@ -412,17 +406,11 @@ def create_agent_with_yaml_prompt():
             tool_name = tool.__name__
         else:
             tool_name = str(type(tool).__name__)
-        
-        if hasattr(tool, 'description'):
-            description = tool.description[:60] + "..."
-        else:
-            description = "No description available"
-        
-        print(f"  ✅ {tool_name}: {description}")
+        print(f"  ✅ {tool_name}")
     
     # Create agent with loaded system prompt
     if system_prompt_config:
-        print("✅ Using loaded YAML system prompt configuration")
+        print("✅ Using FIXED YAML system prompt configuration")
         agent = CodeAgent(
             model=model,
             tools=tools,
@@ -751,6 +739,65 @@ def reload_system_prompt():
             "error": error_msg
         })
 
+
+
+@app.route('/api/test-intelligent-agent', methods=['POST'])
+def test_intelligent_agent():
+    """Test endpoint for the new intelligent PDOK agent."""
+    data = request.json
+    user_request = data.get('user_request', 'show verblijfsobject in Groningen')
+    max_features = data.get('max_features', 20)
+    
+    try:
+        from tools.pdok_intelligent_agent_tool import PDOKIntelligentAgentTool
+        
+        agent_tool = PDOKIntelligentAgentTool()
+        result = agent_tool.forward(
+            user_request=user_request,
+            max_features=max_features
+        )
+        
+        return jsonify({
+            "success": True,
+            "user_request": user_request,
+            "result": result
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        })
+
+@app.route('/api/test-service-discovery', methods=['POST'])
+def test_service_discovery():
+    """Test endpoint for enhanced service discovery."""
+    data = request.json
+    service_type = data.get('service_type', 'all')
+    check_availability = data.get('check_availability', True)
+    
+    try:
+        from tools.pdok_intelligent_agent_tool import EnhancedPDOKServiceDiscoveryTool
+        
+        discovery_tool = EnhancedPDOKServiceDiscoveryTool()
+        result = discovery_tool.forward(
+            service_type=service_type,
+            check_availability=check_availability
+        )
+        
+        return jsonify({
+            "success": True,
+            "service_type": service_type,
+            "result": result
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        })
+
+
 @app.route('/api/test-location', methods=['POST'])
 def test_location_search():
     """Test endpoint for the enhanced location search.
@@ -843,46 +890,43 @@ def test_flexible_buildings():
         })
 
 if __name__ == '__main__':
-    print("🚀 Starting Enhanced Map-Aware Flask server with FLEXIBLE PDOK TOOLS")
+    print("🚀 Starting FIXED Map-Aware Flask server with INTELLIGENT PDOK AGENT")
     print("="*80)
-    print("NEW FLEXIBLE CAPABILITIES:")
-    print("  ✅ Modular PDOK tools for any WFS service and layer")
-    print("  ✅ Service discovery - finds available PDOK layers automatically")
-    print("  ✅ Flexible data requests - works with any PDOK WFS endpoint")
-    print("  ✅ Advanced filtering - distance, age, area, and custom criteria")
-    print("  ✅ Smart map formatting - proper descriptions and metadata")
-    print("  ✅ Combined building tool - simple interface for complex operations")
-    print("  ✅ Better coordinate handling and distance calculations")
-    print("  ✅ Enhanced error handling and debugging")
-    print("  ✅ FIXED: Proper tool docstrings for smolagents compatibility")
+    print("FIXED ARCHITECTURE FEATURES:")
+    print("  ✅ Intelligent PDOK agent with direct API filtering")
+    print("  ✅ Enhanced service discovery with availability checking")
+    print("  ✅ Dynamic service and layer selection based on user requests")
+    print("  ✅ Proper CQL filtering at API level (no retrieve-then-filter)")
+    print("  ✅ Automatic request analysis and endpoint construction")
+    print("  ✅ Fixed random building selection issue")
+    print("  ✅ Support for verblijfsobject, buildings, parcels, boundaries")
     
-    print("\nFLEXIBLE TOOL ARCHITECTURE:")
-    print("  🔍 discover_pdok_services: Find available PDOK WFS services")
-    print("  🌐 request_pdok_data: Make flexible WFS requests to any service")
-    print("  🔽 filter_pdok_data: Apply advanced filters to results")
-    print("  🗺️ format_pdok_for_map: Format data for map display")
-    print("  🏗️ get_pdok_buildings_flexible: Combined building search tool")
+    print("\nINTELLIGENT AGENT CAPABILITIES:")
+    print("  🤖 pdok_intelligent_agent: Analyzes requests and uses appropriate PDOK service")
+    print("  🔍 discover_pdok_services_enhanced: Real-time service availability checking")
+    print("  📍 Automatic location detection and coordinate conversion")
+    print("  🔧 Direct CQL and spatial filtering")
+    print("  🎯 Targeted results without random sampling")
     
     print("\nSOLVES PREVIOUS ISSUES:")
-    print("  ✅ No more 0 buildings found - better distance calculations")
-    print("  ✅ Proper coordinate system handling - RD New ↔ WGS84")
-    print("  ✅ Flexible filtering - age, area, distance criteria")
-    print("  ✅ Agent can understand PDOK services automatically")
-    print("  ✅ Works with any PDOK layer, not just buildings")
-    print("  ✅ Detailed logging for debugging")
-    print("  ✅ FIXED: Tool docstring compatibility with smolagents")
+    print("  ✅ No more random building selection across cities")
+    print("  ✅ Proper distance-based results around specified locations")
+    print("  ✅ Direct API filtering eliminates retrieve-then-filter inefficiency")
+    print("  ✅ Dynamic service discovery for any PDOK layer")
+    print("  ✅ Proper handling of verblijfsobject, parcels, boundaries")
+    print("  ✅ Agent responds correctly to service availability questions")
     
     print("\nTEST ENDPOINTS:")
+    print("  🧪 POST /api/test-intelligent-agent - Test intelligent PDOK agent")
+    print("  🧪 POST /api/test-service-discovery - Test service discovery")
     print("  🧪 POST /api/test-location - Test location search")
-    print("  🧪 POST /api/test-pdok-services - Test service discovery")
-    print("  🧪 POST /api/test-flexible-buildings - Test flexible building search")
     
     print("\nEXAMPLE QUERIES TO TEST:")
-    print("  • 'Show me 20 buildings in Groningen older than 100 years'")
-    print("  • 'Find buildings near Amsterdam train station built before 1950'")
-    print("  • 'Show historic buildings in Utrecht within 3km radius'")
-    print("  • 'Buildings in Rotterdam larger than 500m² from the 1960s'")
-    print("  • 'What PDOK services are available?'")
+    print("  • 'show me all endpoints from the discovery service'")
+    print("  • 'get me some data about verblijfsobject around groningen'") 
+    print("  • 'find buildings near Amsterdam with area > 500m²'")
+    print("  • 'show cadastral parcels in Utrecht'")
+    print("  • 'what PDOK services are available?'")
     
     print("\n" + "="*80)
     print(f"🌐 Server endpoints:")
@@ -892,16 +936,12 @@ if __name__ == '__main__':
     print(f"  🔄 Reload prompt: POST /api/reload-prompt")
     print(f"  🧪 Test endpoints: /api/test-*")
     
-    print("\n🔧 TROUBLESHOOTING:")
-    print("  If you get import errors:")
-    print("    1. Make sure tools/pdok_service_discovery_tool.py exists")
-    print("    2. Check that PyProj is installed: pip install pyproj")
-    print("    3. Verify all tool files are in the tools/ directory")
-    
-    print("\n🎯 THE DOCSTRING FIX:")
-    print("  ✅ All @tool decorated functions now have proper parameter descriptions")
-    print("  ✅ This resolves the DocstringParsingException error")
-    print("  ✅ smolagents can now generate JSON schemas correctly")
+    print("\n🎯 THE INTELLIGENT AGENT")
+    print("  ✅ Service discovery first - understands available endpoints")
+    print("  ✅ Request analysis - determines appropriate service and layer")
+    print("  ✅ Direct API filtering - uses CQL and bbox parameters")
+    print("  ✅ No random sampling - targeted results only")
+    print("  ✅ Handles all PDOK data types automatically")
     print()
     
     app.run(debug=True, port=5000)
