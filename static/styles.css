@@ -646,3 +646,111 @@ input:focus:not(:focus-visible) {
         max-width: 300px;
     }
 }
+
+/* Location Pin Styles - Add to your styles.css */
+
+/* Location Pin Overlay */
+.location-pin-overlay {
+    pointer-events: none;
+    z-index: 1001;
+}
+
+.location-pin-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    animation: pinDrop 0.6s ease-out;
+}
+
+.location-pin {
+    position: relative;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    border-radius: 50% 50% 50% 0;
+    transform: rotate(-45deg);
+    box-shadow: 0 8px 16px rgba(239, 68, 68, 0.4);
+    border: 3px solid white;
+}
+
+.pin-icon {
+    transform: rotate(45deg);
+    font-size: 18px;
+    color: white;
+    font-weight: bold;
+}
+
+.pin-pulse {
+    position: absolute;
+    top: -5px;
+    left: -5px;
+    right: -5px;
+    bottom: -5px;
+    border: 2px solid #ef4444;
+    border-radius: 50% 50% 50% 0;
+    animation: pinPulse 2s infinite;
+    opacity: 0.6;
+}
+
+.pin-label {
+    margin-top: 8px;
+    background: rgba(239, 68, 68, 0.9);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* Animations */
+@keyframes pinDrop {
+    0% {
+        transform: translateY(-100px) scale(0.5);
+        opacity: 0;
+    }
+    50% {
+        transform: translateY(0) scale(1.1);
+    }
+    100% {
+        transform: translateY(0) scale(1);
+        opacity: 1;
+    }
+}
+
+@keyframes pinPulse {
+    0% {
+        transform: scale(1) rotate(-45deg);
+        opacity: 0.6;
+    }
+    50% {
+        transform: scale(1.2) rotate(-45deg);
+        opacity: 0.3;
+    }
+    100% {
+        transform: scale(1) rotate(-45deg);
+        opacity: 0.6;
+    }
+}
+
+/* Smart Legend Styles */
+.smart-legend {
+    position: fixed;
+    bottom: 160px;
+    left: 20px;
+    z-index: 998;
+    max-width: 250px;
+}
+
+/* Map Statistics Styles */
+.map-statistics {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    z-index: 998;
+    max-width: 280px;
+}

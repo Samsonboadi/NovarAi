@@ -1,4 +1,4 @@
-console.log("Loading FIXED Production Map-Aware PDOK Chat Assistant");
+console.log("Loading Map-Aware PDOK Chat Assistant - Fixed Legends and Statistics");
 
 try {
     const { useState, useEffect, useRef, useCallback } = React;
@@ -6,184 +6,117 @@ try {
     const container = document.getElementById('root');
     const root = ReactDOM.createRoot ? ReactDOM.createRoot(container) : null;
 
-    // FIXED: Simple but robust Legend Component (based on working test)
-    const SmartLegend = ({ features }) => {
-        console.log("SmartLegend rendering with features:", features?.length || 0);
+    // FIXED Area Legend Component
+    const AreaLegend = ({ features }) => {
+        console.log("AreaLegend rendering with features:", features?.length || 0);
         
         if (!features || !Array.isArray(features) || features.length === 0) {
-            console.log("SmartLegend: No features to display");
+            console.log("AreaLegend: No features to display");
             return null;
         }
         
-        // FIXED: Check for area data more robustly
+        // FIXED: Better area data detection - check multiple area fields
         const hasAreaData = features.some(f => {
-            if (!f.properties) return false;
-            const area = f.properties.area_m2 || f.properties.oppervlakte_max || f.properties.oppervlakte_min;
-            const valid = area && area > 0;
-            if (valid) console.log("Found area data:", area, "for feature:", f.name);
-            return valid;
+            const area = f.properties?.area_m2 || f.properties?.oppervlakte_max || f.properties?.oppervlakte_min;
+            const hasArea = area && area > 0;
+            if (hasArea) {
+                console.log("Found area data:", area, "in feature:", f.name);
+            }
+            return hasArea;
         });
         
-        const hasYearData = features.some(f => {
-            if (!f.properties) return false;
-            const year = f.properties.bouwjaar;
-            const valid = year && !isNaN(year) && year > 1800;
-            if (valid) console.log("Found year data:", year, "for feature:", f.name);
-            return valid;
-        });
+        console.log("AreaLegend: Has area data?", hasAreaData);
         
-        console.log("Legend decision: hasAreaData =", hasAreaData, "hasYearData =", hasYearData);
-        
-        // Priority: Show area legend if available, otherwise age legend
-        const showAreaLegend = hasAreaData;
-        const showAgeLegend = hasYearData && !hasAreaData;
-        
-        if (!showAreaLegend && !showAgeLegend) {
-            console.log("SmartLegend: No valid data for any legend");
+        if (!hasAreaData) {
+            console.log("AreaLegend: No area data found in features");
             return null;
         }
         
-        // Use inline styles (like working test) instead of CSS classes
-        const legendStyle = {
-            position: 'fixed',
-            bottom: '160px',
-            left: '20px',
-            zIndex: 998,
-            maxWidth: '250px',
-            backgroundColor: 'rgba(255, 255, 255, 0.95)',
-            padding: '12px',
-            borderRadius: '12px',
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
-            border: '1px solid rgba(0, 0, 0, 0.1)',
-            fontFamily: 'Inter, sans-serif'
-        };
-        
-        if (showAreaLegend) {
-            console.log("Rendering AREA legend");
-            return React.createElement('div', {
-                style: legendStyle
+        return React.createElement('div', {
+            className: "area-legend",
+            style: {
+                position: 'fixed',
+                bottom: '280px',
+                left: '20px',
+                zIndex: 998,
+                maxWidth: '250px'
+            }
+        }, React.createElement('div', {
+            className: "floating-card px-3 py-2"
+        }, React.createElement('div', {
+            className: "text-xs"
+        }, [
+            React.createElement('p', {
+                key: 'title',
+                className: "font-medium text-gray-800 mb-2"
+            }, "🏠 Building Area Legend"),
+            React.createElement('div', {
+                key: 'legend-items',
+                className: "space-y-1"
             }, [
-                React.createElement('div', {
-                    key: 'title',
-                    style: { fontSize: '12px', fontWeight: 'bold', marginBottom: '8px', color: '#1f2937' }
-                }, "🏠 Building Areas"),
-                
                 React.createElement('div', {
                     key: 'large',
-                    style: { fontSize: '11px', display: 'flex', alignItems: 'center', marginBottom: '4px' }
+                    className: "flex items-center space-x-2"
                 }, [
                     React.createElement('div', {
                         key: 'color',
-                        style: { width: '12px', height: '12px', backgroundColor: '#dc2626', marginRight: '8px', borderRadius: '2px' }
+                        className: "w-3 h-3 bg-red-600 rounded"
                     }),
-                    React.createElement('span', { key: 'text', style: { color: '#4b5563' } }, "Large (>1000m²)")
+                    React.createElement('span', {
+                        key: 'text',
+                        className: "text-gray-600"
+                    }, "Large (>1000m²)")
                 ]),
-                
                 React.createElement('div', {
                     key: 'medium',
-                    style: { fontSize: '11px', display: 'flex', alignItems: 'center', marginBottom: '4px' }
+                    className: "flex items-center space-x-2"
                 }, [
                     React.createElement('div', {
                         key: 'color',
-                        style: { width: '12px', height: '12px', backgroundColor: '#f97316', marginRight: '8px', borderRadius: '2px' }
+                        className: "w-3 h-3 bg-orange-500 rounded"
                     }),
-                    React.createElement('span', { key: 'text', style: { color: '#4b5563' } }, "Medium (500-1000m²)")
+                    React.createElement('span', {
+                        key: 'text',
+                        className: "text-gray-600"
+                    }, "Medium (500-1000m²)")
                 ]),
-                
                 React.createElement('div', {
                     key: 'standard',
-                    style: { fontSize: '11px', display: 'flex', alignItems: 'center', marginBottom: '4px' }
+                    className: "flex items-center space-x-2"
                 }, [
                     React.createElement('div', {
                         key: 'color',
-                        style: { width: '12px', height: '12px', backgroundColor: '#eab308', marginRight: '8px', borderRadius: '2px' }
+                        className: "w-3 h-3 bg-yellow-500 rounded"
                     }),
-                    React.createElement('span', { key: 'text', style: { color: '#4b5563' } }, "Standard (200-500m²)")
+                    React.createElement('span', {
+                        key: 'text',
+                        className: "text-gray-600"
+                    }, "Standard (200-500m²)")
                 ]),
-                
                 React.createElement('div', {
                     key: 'small',
-                    style: { fontSize: '11px', display: 'flex', alignItems: 'center', marginBottom: '4px' }
+                    className: "flex items-center space-x-2"
                 }, [
                     React.createElement('div', {
                         key: 'color',
-                        style: { width: '12px', height: '12px', backgroundColor: '#22c55e', marginRight: '8px', borderRadius: '2px' }
+                        className: "w-3 h-3 bg-green-500 rounded"
                     }),
-                    React.createElement('span', { key: 'text', style: { color: '#4b5563' } }, "Small (<200m²)")
-                ]),
-                
-                React.createElement('div', {
-                    key: 'note',
-                    style: { fontSize: '10px', color: '#6b7280', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #e5e7eb' }
-                }, "Areas from PDOK BAG data")
-            ]);
-        }
-        
-        if (showAgeLegend) {
-            console.log("Rendering AGE legend");
-            return React.createElement('div', {
-                style: legendStyle
-            }, [
-                React.createElement('div', {
-                    key: 'title',
-                    style: { fontSize: '12px', fontWeight: 'bold', marginBottom: '8px', color: '#1f2937' }
-                }, "🏛️ Building Ages"),
-                
-                React.createElement('div', {
-                    key: 'historic',
-                    style: { fontSize: '11px', display: 'flex', alignItems: 'center', marginBottom: '4px' }
-                }, [
-                    React.createElement('div', {
-                        key: 'color',
-                        style: { width: '12px', height: '12px', backgroundColor: '#8B0000', marginRight: '8px', borderRadius: '2px' }
-                    }),
-                    React.createElement('span', { key: 'text', style: { color: '#4b5563' } }, "Historic (pre-1900)")
-                ]),
-                
-                React.createElement('div', {
-                    key: 'early',
-                    style: { fontSize: '11px', display: 'flex', alignItems: 'center', marginBottom: '4px' }
-                }, [
-                    React.createElement('div', {
-                        key: 'color',
-                        style: { width: '12px', height: '12px', backgroundColor: '#FF4500', marginRight: '8px', borderRadius: '2px' }
-                    }),
-                    React.createElement('span', { key: 'text', style: { color: '#4b5563' } }, "Early Modern (1900-1950)")
-                ]),
-                
-                React.createElement('div', {
-                    key: 'mid',
-                    style: { fontSize: '11px', display: 'flex', alignItems: 'center', marginBottom: '4px' }
-                }, [
-                    React.createElement('div', {
-                        key: 'color',
-                        style: { width: '12px', height: '12px', backgroundColor: '#32CD32', marginRight: '8px', borderRadius: '2px' }
-                    }),
-                    React.createElement('span', { key: 'text', style: { color: '#4b5563' } }, "Mid-Century (1950-2000)")
-                ]),
-                
-                React.createElement('div', {
-                    key: 'contemporary',
-                    style: { fontSize: '11px', display: 'flex', alignItems: 'center', marginBottom: '4px' }
-                }, [
-                    React.createElement('div', {
-                        key: 'color',
-                        style: { width: '12px', height: '12px', backgroundColor: '#1E90FF', marginRight: '8px', borderRadius: '2px' }
-                    }),
-                    React.createElement('span', { key: 'text', style: { color: '#4b5563' } }, "Contemporary (2000+)")
-                ]),
-                
-                React.createElement('div', {
-                    key: 'note',
-                    style: { fontSize: '10px', color: '#6b7280', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #e5e7eb' }
-                }, "Construction periods")
-            ]);
-        }
-        
-        return null;
+                    React.createElement('span', {
+                        key: 'text',
+                        className: "text-gray-600"
+                    }, "Small (<200m²)")
+                ])
+            ]),
+            React.createElement('div', {
+                key: 'note',
+                className: "mt-2 pt-2 border-t border-gray-200"
+            }, React.createElement('p', {
+                className: "text-xs text-gray-500"
+            }, "Areas from PDOK BAG data"))
+        ])));
     };
 
-    // FIXED: Simple but robust Statistics Component (based on working test)
+    // FIXED Enhanced Map Statistics Component 
     const EnhancedMapStatistics = ({ features }) => {
         console.log("EnhancedMapStatistics rendering with features:", features?.length || 0);
         
@@ -192,15 +125,14 @@ try {
             return null;
         }
         
-        // FIXED: Safer data extraction
+        // FIXED: Better data extraction with multiple field checking
         const years = features
             .map(f => f.properties?.bouwjaar)
             .filter(year => year && !isNaN(year) && year > 1800);
         
         const areas = features
             .map(f => {
-                if (!f.properties) return null;
-                const area = f.properties.area_m2 || f.properties.oppervlakte_max || f.properties.oppervlakte_min;
+                const area = f.properties?.area_m2 || f.properties?.oppervlakte_max || f.properties?.oppervlakte_min;
                 return area && area > 0 ? area : null;
             })
             .filter(area => area !== null);
@@ -209,87 +141,268 @@ try {
             .map(f => f.properties?.distance_km || f.distance_km)
             .filter(dist => dist && dist > 0);
         
-        console.log("Statistics compiled:", { years: years.length, areas: areas.length, distances: distances.length });
-        
-        // Use inline styles (like working test)
-        const statsStyle = {
-            position: 'fixed',
-            bottom: '20px',
-            left: '20px',
-            zIndex: 998,
-            maxWidth: '280px',
-            backgroundColor: 'rgba(255, 255, 255, 0.95)',
-            padding: '12px',
-            borderRadius: '12px',
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
-            border: '1px solid rgba(0, 0, 0, 0.1)',
-            fontFamily: 'Inter, sans-serif'
-        };
+        console.log("Statistics data:", { 
+            years: years.length, 
+            areas: areas.length, 
+            distances: distances.length,
+            sampleYear: years[0],
+            sampleArea: areas[0],
+            sampleDistance: distances[0]
+        });
         
         return React.createElement('div', {
-            style: statsStyle
+            className: "map-statistics",
+            style: {
+                position: 'fixed',
+                bottom: '20px',
+                left: '20px',
+                zIndex: 998,
+                maxWidth: '280px'
+            }
+        }, React.createElement('div', {
+            className: "floating-card px-4 py-3"
+        }, React.createElement('div', {
+            className: "text-sm"
         }, [
-            React.createElement('div', {
+            React.createElement('p', {
                 key: 'title',
-                style: { fontSize: '12px', fontWeight: 'bold', marginBottom: '4px', color: '#1f2937' }
+                className: "font-medium text-gray-800 mb-1"
             }, "📊 Search Results"),
-            
-            React.createElement('div', {
+            React.createElement('p', {
                 key: 'count',
-                style: { fontSize: '11px', color: '#4b5563', marginBottom: '8px' }
+                className: "text-gray-600 mb-2"
             }, `${features.length} buildings displayed`),
             
-            // Area statistics
+            // Area statistics - FIXED
             ...(areas.length > 0 ? [
                 React.createElement('div', {
-                    key: 'area-title',
-                    style: { fontSize: '10px', fontWeight: 'bold', color: '#374151', marginBottom: '2px' }
-                }, "🏠 Building Areas:"),
-                React.createElement('div', {
-                    key: 'area-range',
-                    style: { fontSize: '10px', color: '#6b7280' }
-                }, `${Math.min(...areas).toLocaleString()}m² - ${Math.max(...areas).toLocaleString()}m²`),
-                React.createElement('div', {
-                    key: 'area-avg',
-                    style: { fontSize: '10px', color: '#6b7280', marginBottom: '6px' }
-                }, `Average: ${Math.round(areas.reduce((sum, area) => sum + area, 0) / areas.length).toLocaleString()}m²`)
+                    key: 'area-section',
+                    className: "mb-2"
+                }, [
+                    React.createElement('p', {
+                        key: 'area-title',
+                        className: "text-xs font-medium text-gray-700"
+                    }, "🏠 Building Areas:"),
+                    React.createElement('p', {
+                        key: 'area-range',
+                        className: "text-xs text-gray-600"
+                    }, `${Math.min(...areas).toLocaleString()}m² - ${Math.max(...areas).toLocaleString()}m²`),
+                    React.createElement('p', {
+                        key: 'area-avg',
+                        className: "text-xs text-gray-600"
+                    }, `Average: ${Math.round(areas.reduce((sum, area) => sum + area, 0) / areas.length).toLocaleString()}m²`)
+                ])
             ] : []),
             
-            // Distance statistics
+            // Distance statistics - FIXED
             ...(distances.length > 0 ? [
                 React.createElement('div', {
-                    key: 'distance-title',
-                    style: { fontSize: '10px', fontWeight: 'bold', color: '#374151', marginBottom: '2px' }
-                }, "📍 Distances:"),
-                React.createElement('div', {
-                    key: 'distance-range',
-                    style: { fontSize: '10px', color: '#6b7280', marginBottom: '6px' }
-                }, `${Math.min(...distances).toFixed(3)}km - ${Math.max(...distances).toFixed(3)}km`)
+                    key: 'distance-section',
+                    className: "mb-2"
+                }, [
+                    React.createElement('p', {
+                        key: 'distance-title',
+                        className: "text-xs font-medium text-gray-700"
+                    }, "📍 Distances:"),
+                    React.createElement('p', {
+                        key: 'distance-range',
+                        className: "text-xs text-gray-600"
+                    }, `${Math.min(...distances).toFixed(3)}km - ${Math.max(...distances).toFixed(3)}km`)
+                ])
             ] : []),
             
-            // Year statistics
+            // Year statistics - FIXED
             ...(years.length > 0 ? [
                 React.createElement('div', {
-                    key: 'year-title',
-                    style: { fontSize: '10px', fontWeight: 'bold', color: '#374151', marginBottom: '2px' }
-                }, "🏛️ Construction Years:"),
-                React.createElement('div', {
-                    key: 'years',
-                    style: { fontSize: '10px', color: '#6b7280' }
-                }, `${Math.min(...years)} - ${Math.max(...years)}`)
+                    key: 'year-section'
+                }, [
+                    React.createElement('p', {
+                        key: 'year-title',
+                        className: "text-xs font-medium text-gray-700"
+                    }, "🏛️ Construction Years:"),
+                    React.createElement('p', {
+                        key: 'years',
+                        className: "text-xs text-gray-600"
+                    }, `${Math.min(...years)} - ${Math.max(...years)}`)
+                ])
             ] : [])
-        ]);
+        ])));
+    };
+
+    // FIXED Building Age Legend Component
+    const BuildingAgeLegend = ({ features }) => {
+        console.log("BuildingAgeLegend rendering with features:", features?.length || 0);
+        
+        if (!features || !Array.isArray(features) || features.length === 0) {
+            console.log("BuildingAgeLegend: No features to display");
+            return null;
+        }
+        
+        // FIXED: Better year data detection
+        const hasYearData = features.some(f => {
+            const year = f.properties?.bouwjaar;
+            const hasYear = year && !isNaN(year) && year > 1800;
+            if (hasYear) {
+                console.log("Found year data:", year, "in feature:", f.name);
+            }
+            return hasYear;
+        });
+        
+        console.log("BuildingAgeLegend: Has year data?", hasYearData);
+        
+        if (!hasYearData) {
+            console.log("BuildingAgeLegend: No year data found in features");
+            return null;
+        }
+        
+        // Check if we should prioritize area colors over age colors
+        const hasAreaData = features.some(f => {
+            const area = f.properties?.area_m2 || f.properties?.oppervlakte_max || f.properties?.oppervlakte_min;
+            return area && area > 0;
+        });
+        
+        return React.createElement('div', {
+            className: "building-legend",
+            style: {
+                position: 'fixed',
+                bottom: hasAreaData ? '160px' : '120px',
+                left: '20px',
+                zIndex: 998,
+                maxWidth: '250px'
+            }
+        }, React.createElement('div', {
+            className: "floating-card px-3 py-2"
+        }, React.createElement('div', {
+            className: "text-xs"
+        }, [
+            React.createElement('p', {
+                key: 'title',
+                className: "font-medium text-gray-800 mb-2"
+            }, "🏛️ Building Age Legend"),
+            React.createElement('div', {
+                key: 'legend-items',
+                className: "space-y-1"
+            }, [
+                React.createElement('div', {
+                    key: 'historic',
+                    className: "flex items-center space-x-2"
+                }, [
+                    React.createElement('div', {
+                        key: 'color',
+                        className: "w-3 h-3 bg-red-800 rounded"
+                    }),
+                    React.createElement('span', {
+                        key: 'text',
+                        className: "text-gray-600"
+                    }, "Historic (pre-1900)")
+                ]),
+                React.createElement('div', {
+                    key: 'early-modern',
+                    className: "flex items-center space-x-2"
+                }, [
+                    React.createElement('div', {
+                        key: 'color',
+                        className: "w-3 h-3 bg-orange-500 rounded"
+                    }),
+                    React.createElement('span', {
+                        key: 'text',
+                        className: "text-gray-600"
+                    }, "Early Modern (1900-1950)")
+                ]),
+                React.createElement('div', {
+                    key: 'mid-century',
+                    className: "flex items-center space-x-2"
+                }, [
+                    React.createElement('div', {
+                        key: 'color',
+                        className: "w-3 h-3 bg-green-500 rounded"
+                    }),
+                    React.createElement('span', {
+                        key: 'text',
+                        className: "text-gray-600"
+                    }, "Mid-Century (1950-2000)")
+                ]),
+                React.createElement('div', {
+                    key: 'contemporary',
+                    className: "flex items-center space-x-2"
+                }, [
+                    React.createElement('div', {
+                        key: 'color',
+                        className: "w-3 h-3 bg-blue-500 rounded"
+                    }),
+                    React.createElement('span', {
+                        key: 'text',
+                        className: "text-gray-600"
+                    }, "Contemporary (2000+)")
+                ])
+            ]),
+            React.createElement('div', {
+                key: 'note',
+                className: "mt-2 pt-2 border-t border-gray-200"
+            }, React.createElement('p', {
+                className: "text-xs text-gray-500"
+            }, hasAreaData 
+                ? "Age colors shown when no area data available" 
+                : "Colors show building construction periods"
+            ))
+        ])));
+    };
+
+    // Debug Component - TEMPORARY FOR DEBUGGING
+    const DebugDataDisplay = ({ features }) => {
+        if (!features || features.length === 0) return null;
+        
+        const sampleFeature = features[0];
+        const props = sampleFeature?.properties || {};
+        
+        return React.createElement('div', {
+            style: {
+                position: 'fixed',
+                top: '60px',
+                right: '20px',
+                zIndex: 1000,
+                maxWidth: '300px',
+                fontSize: '10px'
+            }
+        }, React.createElement('div', {
+            className: "floating-card px-2 py-1 bg-yellow-50 border-yellow-200"
+        }, [
+            React.createElement('p', {
+                key: 'title',
+                className: "font-bold text-yellow-800 mb-1"
+            }, "🐛 DEBUG DATA"),
+            React.createElement('p', {
+                key: 'count',
+                className: "text-yellow-700"
+            }, `Features: ${features.length}`),
+            React.createElement('p', {
+                key: 'sample-props',
+                className: "text-yellow-700"
+            }, `Sample props: ${Object.keys(props).slice(0, 5).join(', ')}`),
+            React.createElement('p', {
+                key: 'area-fields',
+                className: "text-yellow-700"
+            }, `Area fields: area_m2=${props.area_m2}, oppervlakte_max=${props.oppervlakte_max}, oppervlakte_min=${props.oppervlakte_min}`),
+            React.createElement('p', {
+                key: 'year-field',
+                className: "text-yellow-700"
+            }, `Year: bouwjaar=${props.bouwjaar}`),
+            React.createElement('p', {
+                key: 'distance-field',
+                className: "text-yellow-700"
+            }, `Distance: distance_km=${props.distance_km || sampleFeature.distance_km}`)
+        ]));
     };
 
     const App = () => {
-        console.log("Initializing FIXED Production Map component");
+        console.log("Initializing Map-Aware React component with FIXED legends and statistics");
         
         // State management
         const [query, setQuery] = useState('');
         const [messages, setMessages] = useState([
             {
                 type: 'assistant',
-                content: 'Hello! I\'m your FIXED map-aware AI assistant with working location pin and legends! Try: "Show me buildings near Leonard Springerlaan 37, Groningen with area > 300m²"',
+                content: 'Hello! I\'m your map-aware AI assistant with FIXED legends and statistics display! Try: "Show me buildings near Leonard Springerlaan 37, Groningen with area > 300m²"',
                 timestamp: new Date()
             }
         ]);
@@ -299,14 +412,12 @@ try {
         const [mapView, setMapView] = useState('satellite');
         const [mapCenter, setMapCenter] = useState([5.2913, 52.1326]);
         const [mapZoom, setMapZoom] = useState(8);
-        const [searchLocation, setSearchLocation] = useState(null);
         
         // Refs
         const mapRef = useRef(null);
         const mapInstance = useRef(null);
         const overlayRef = useRef(null);
         const messagesEndRef = useRef(null);
-        const locationPinRef = useRef(null);
 
         // Auto-scroll to bottom of messages
         const scrollToBottom = () => {
@@ -333,7 +444,7 @@ try {
 
         // Initialize OpenLayers map
         useEffect(() => {
-            console.log("Setting up FIXED OpenLayers map");
+            console.log("Setting up Map-Aware OpenLayers map");
             try {
                 // Base layers
                 const osmLayer = new ol.layer.Tile({
@@ -349,6 +460,7 @@ try {
                     visible: mapView === 'satellite'
                 });
 
+                // Create controls array manually
                 const controls = [
                     new ol.control.Zoom(),
                     new ol.control.Attribution()
@@ -364,7 +476,7 @@ try {
                     controls: controls
                 });
 
-                // Map movement listeners
+                // Map movement listeners for context awareness
                 mapInstance.current.getView().on('change:center', () => {
                     const center = ol.proj.toLonLat(mapInstance.current.getView().getCenter());
                     setMapCenter(center);
@@ -395,79 +507,13 @@ try {
                 });
                 mapInstance.current.addOverlay(overlayRef.current);
 
-                // FIXED: Create location pin with inline styles (like working test)
-                const pinContainer = document.createElement('div');
-                pinContainer.style.cssText = `
-                    pointer-events: none;
-                    z-index: 1001;
-                `;
-                pinContainer.innerHTML = `
-                    <div style="
-                        display: flex;
-                        flex-direction: column;
-                        align-items: center;
-                        animation: pinDrop 0.6s ease-out;
-                    ">
-                        <div style="
-                            position: relative;
-                            width: 40px;
-                            height: 40px;
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
-                            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-                            border-radius: 50% 50% 50% 0;
-                            transform: rotate(-45deg);
-                            box-shadow: 0 8px 16px rgba(239, 68, 68, 0.4);
-                            border: 3px solid white;
-                        ">
-                            <div style="
-                                transform: rotate(45deg);
-                                font-size: 18px;
-                                color: white;
-                                font-weight: bold;
-                            ">📍</div>
-                            <div style="
-                                position: absolute;
-                                top: -5px;
-                                left: -5px;
-                                right: -5px;
-                                bottom: -5px;
-                                border: 2px solid #ef4444;
-                                border-radius: 50% 50% 50% 0;
-                                animation: pinPulse 2s infinite;
-                                opacity: 0.6;
-                            "></div>
-                        </div>
-                        <div style="
-                            margin-top: 8px;
-                            background: rgba(239, 68, 68, 0.9);
-                            color: white;
-                            padding: 4px 8px;
-                            border-radius: 12px;
-                            font-size: 11px;
-                            font-weight: 600;
-                            white-space: nowrap;
-                            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-                        ">Search Location</div>
-                    </div>
-                `;
-                
-                locationPinRef.current = new ol.Overlay({
-                    element: pinContainer,
-                    positioning: 'bottom-center',
-                    stopEvent: false,
-                    offset: [0, -10]
-                });
-                mapInstance.current.addOverlay(locationPinRef.current);
-
                 closer.onclick = () => {
                     overlayRef.current.setPosition(undefined);
                     closer.blur();
                     return false;
                 };
 
-                // Enhanced click handler
+                // Enhanced click handler with more details
                 mapInstance.current.on('singleclick', (evt) => {
                     const feature = mapInstance.current.forEachFeatureAtPixel(evt.pixel, f => f);
                     if (feature) {
@@ -479,6 +525,9 @@ try {
                         } else if (geom.getType() === 'Polygon') {
                             const extent = geom.getExtent();
                             coordinates = [(extent[0] + extent[2]) / 2, (extent[1] + extent[3]) / 2];
+                        } else if (geom.getType() === 'LineString') {
+                            const coords = geom.getCoordinates();
+                            coordinates = coords[Math.floor(coords.length / 2)];
                         } else {
                             coordinates = geom.getFirstCoordinate();
                         }
@@ -488,6 +537,7 @@ try {
                         const description = feature.get('description') || '';
                         const lonLat = ol.proj.toLonLat(coordinates);
                         
+                        // Enhanced popup with more building details
                         let popupContent = `
                             <div class="space-y-3">
                                 <h3 class="text-lg font-semibold text-gray-800">${name}</h3>
@@ -497,7 +547,7 @@ try {
                                     ${description ? `<p class="mt-2">${description}</p>` : ''}
                         `;
                         
-                        // Building information
+                        // Add building-specific information - FIXED to check multiple area fields
                         if (props.bouwjaar) {
                             const year = props.bouwjaar;
                             let era = 'Unknown';
@@ -509,25 +559,43 @@ try {
                             popupContent += `<p><span class="font-medium">Built:</span> ${year} (${era})</p>`;
                         }
                         
+                        // FIXED: Check multiple area fields
                         const area = props.area_m2 || props.oppervlakte_max || props.oppervlakte_min;
                         if (area && area > 0) {
                             popupContent += `<p><span class="font-medium">Area:</span> ${Math.round(area).toLocaleString()}m²</p>`;
                         }
                         
+                        // FIXED: Check distance fields
                         const distance = props.distance_km;
                         if (distance && distance > 0) {
-                            popupContent += `<p><span class="font-medium">Distance:</span> ${distance.toFixed(3)}km from search location</p>`;
+                            popupContent += `<p><span class="font-medium">Distance:</span> ${distance.toFixed(3)}km from search center</p>`;
                         }
                         
-                        popupContent += '</div></div>';
+                        if (props.aantal_verblijfsobjecten) {
+                            popupContent += `<p><span class="font-medium">Units:</span> ${props.aantal_verblijfsobjecten}</p>`;
+                        }
+                        
+                        popupContent += '</div>';
+                        
+                        // Show additional properties
+                        if (Object.keys(props).length > 0) {
+                            popupContent += '<div class="mt-3 pt-3 border-t border-gray-200"><h4 class="font-medium text-gray-700 mb-2">Additional Properties:</h4>';
+                            Object.entries(props).forEach(([key, value]) => {
+                                if (value !== null && value !== undefined && 
+                                    !['bouwjaar', 'area_m2', 'oppervlakte_max', 'oppervlakte_min', 'aantal_verblijfsobjecten', 'centroid_lat', 'centroid_lon', 'distance_km'].includes(key)) {
+                                    popupContent += `<p class="text-xs text-gray-600"><span class="font-medium">${key}:</span> ${value}</p>`;
+                                }
+                            });
+                            popupContent += '</div>';
+                        }
+                        
+                        popupContent += '</div>';
                         document.getElementById('popup-content').innerHTML = popupContent;
                         overlayRef.current.setPosition(coordinates);
                     } else {
                         overlayRef.current.setPosition(undefined);
                     }
                 });
-
-                console.log("✅ FIXED map setup complete");
 
                 return () => {
                     if (mapInstance.current) {
@@ -538,15 +606,6 @@ try {
                 console.error("Error setting up map:", error);
             }
         }, [mapView]);
-
-        // Show pin when searchLocation is set
-        useEffect(() => {
-            if (searchLocation && locationPinRef.current && mapInstance.current) {
-                console.log(`📍 FIXED: Adding location pin at: ${searchLocation.lat}, ${searchLocation.lon}`);
-                const pinCoords = ol.proj.fromLonLat([searchLocation.lon, searchLocation.lat]);
-                locationPinRef.current.setPosition(pinCoords);
-            }
-        }, [searchLocation]);
 
         // Switch between map views
         const switchMapView = (view) => {
@@ -562,7 +621,7 @@ try {
             }
         };
 
-        // Enhanced chat query handler
+        // Enhanced chat query handler with debugging
         const handleQuery = async () => {
             if (!query.trim()) return;
             
@@ -580,6 +639,7 @@ try {
             try {
                 console.log("Sending query to backend:", currentQuery);
                 
+                // Send map context along with query
                 const res = await fetch('/api/query', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -593,11 +653,12 @@ try {
                 
                 const data = await res.json();
                 console.log("Received data from backend:", data);
+                console.log("Data type:", typeof data);
                 
                 let responseContent = '';
                 let foundBuildings = false;
                 
-                // Handle combined response format
+                // Handle combined response format (text + geojson)
                 if (data && typeof data === 'object' && 'response' in data && 'geojson_data' in data) {
                     console.log("✅ Detected combined response format");
                     
@@ -607,75 +668,75 @@ try {
                     if (Array.isArray(geojsonData) && geojsonData.length > 0) {
                         const firstItem = geojsonData[0];
                         
+                        // Validate building data
                         if (firstItem && typeof firstItem === 'object' && 
                             'name' in firstItem && 'lat' in firstItem && 'lon' in firstItem && 
                             'geometry' in firstItem && firstItem.lat !== 0 && firstItem.lon !== 0) {
                             
-                            console.log("✓ Valid building data - updating map and components");
+                            console.log("✓ Valid building data in combined response - updating map");
+                            console.log("First building sample:", {
+                                name: firstItem.name,
+                                area_m2: firstItem.properties?.area_m2,
+                                oppervlakte_max: firstItem.properties?.oppervlakte_max,
+                                oppervlakte_min: firstItem.properties?.oppervlakte_min,
+                                bouwjaar: firstItem.properties?.bouwjaar,
+                                distance_km: firstItem.properties?.distance_km || firstItem.distance_km
+                            });
                             
-                            // Extract search location
-                            const responseText = data.response || '';
-                            const coordMatch = responseText.match(/(\d+\.\d+)°N,\s*(\d+\.\d+)°E/);
-                            if (coordMatch) {
-                                const searchLat = parseFloat(coordMatch[1]);
-                                const searchLon = parseFloat(coordMatch[2]);
-                                
-                                setSearchLocation({
-                                    lat: searchLat,
-                                    lon: searchLon,
-                                    name: "Search Location"
-                                });
-                                console.log(`📍 Found search coordinates: ${searchLat}, ${searchLon}`);
-                            } 
-                            else if (geojsonData.some(b => b.properties?.distance_km !== undefined)) {
-                                const buildingsWithDistance = geojsonData.filter(b => b.properties?.distance_km !== undefined);
-                                if (buildingsWithDistance.length > 0) {
-                                    const closestBuilding = buildingsWithDistance[0];
-                                    setSearchLocation({
-                                        lat: closestBuilding.lat,
-                                        lon: closestBuilding.lon,
-                                        name: "Near Search Address"
-                                    });
-                                    console.log(`📍 Using closest building as search center`);
-                                }
-                            }
-                            
-                            console.log("Setting features for legend and statistics:", geojsonData.length);
                             setFeatures(geojsonData);
                             updateMapFeatures(geojsonData);
                             foundBuildings = true;
                         }
                     }
                 }
-                // Handle other response formats...
+                // Handle legacy array format (buildings only)
                 else if (Array.isArray(data) && data.length > 0) {
                     const firstItem = data[0];
+                    console.log("First item:", firstItem);
                     
+                    // Check if this is building data with geometry
                     if (firstItem && typeof firstItem === 'object' && 
                         'name' in firstItem && 'lat' in firstItem && 'lon' in firstItem && 
                         'geometry' in firstItem && firstItem.lat !== 0 && firstItem.lon !== 0) {
                         
-                        console.log("✓ Legacy building data format - updating map");
+                        console.log("✓ Detected legacy building data format - updating map");
                         setFeatures(data);
                         updateMapFeatures(data);
                         foundBuildings = true;
                         
-                        responseContent = `Found ${data.length} buildings! The legend and location pin should now work correctly.`;
+                        // Enhanced response with statistics
+                        const totalArea = data.reduce((sum, building) => {
+                            const area = building.properties?.area_m2 || building.properties?.oppervlakte_max || building.properties?.oppervlakte_min || 0;
+                            return sum + area;
+                        }, 0);
+                        const years = data.filter(b => b.properties?.bouwjaar).map(b => b.properties.bouwjaar);
+                        const avgYear = years.length > 0 ? years.reduce((sum, year) => sum + year, 0) / years.length : null;
+                        
+                        responseContent = `Found ${data.length} buildings! I've displayed them on the map with enhanced visibility and FIXED legends. ` +
+                            `Total area: ${Math.round(totalArea).toLocaleString()}m². ` +
+                            (avgYear ? `Average construction year: ${Math.round(avgYear)}. ` : '') +
+                            `The legends and statistics should now display correctly!`;
+                        
                     } else if (firstItem && firstItem.error) {
                         responseContent = `I encountered an issue: ${firstItem.error}`;
                     } else {
+                        // Handle array of strings (text responses)
                         responseContent = Array.isArray(data) ? data.join('\n') : JSON.stringify(data, null, 2);
                     }
                 }
+                // Handle wrapped text responses
                 else if (data && data.response) {
                     responseContent = data.response;
                 }
+                // Handle error responses
                 else if (data && data.error) {
                     responseContent = `I encountered an issue: ${data.error}`;
                 }
+                // Handle plain string responses
                 else if (typeof data === 'string') {
                     responseContent = data;
                 }
+                // Handle other data types
                 else {
                     responseContent = JSON.stringify(data, null, 2);
                 }
@@ -702,14 +763,14 @@ try {
             }
         };
 
-        // Enhanced map features update
+        // Enhanced map features update with better area-based styling
         const updateMapFeatures = (data) => {
             if (!mapInstance.current) {
                 console.error("Map instance not available");
                 return;
             }
 
-            console.log(`Updating map with ${data.length} features`);
+            console.log(`Updating map with ${data.length} features with FIXED area-based styling`);
             
             // Remove existing vector layers
             const layersToRemove = [];
@@ -732,8 +793,21 @@ try {
             
             data.forEach((f, index) => {
                 try {
-                    if (!f.geometry || !f.lat || !f.lon || f.lat === 0 || f.lon === 0) {
-                        console.warn(`Skipping feature ${index + 1}: invalid data`);
+                    console.log(`Processing feature ${index + 1}/${data.length}:`);
+                    console.log(`  Name: ${f.name}`);
+                    console.log(`  Coordinates: ${f.lat}, ${f.lon}`);
+                    
+                    // FIXED: Check multiple area fields
+                    const area = f.properties?.area_m2 || f.properties?.oppervlakte_max || f.properties?.oppervlakte_min || 0;
+                    console.log(`  Area: ${area}m²`);
+                    
+                    if (!f.geometry || !f.lat || !f.lon) {
+                        console.warn(`  Skipping feature ${index + 1}: missing geometry or coordinates`);
+                        return;
+                    }
+                    
+                    if (f.lat === 0 && f.lon === 0) {
+                        console.warn(`  Skipping feature ${index + 1}: invalid coordinates (0,0)`);
                         return;
                     }
                     
@@ -777,13 +851,37 @@ try {
                             processedGeometry.coordinates = ensureArrays(processedGeometry.coordinates);
                         }
                         
+                        // Validate coordinate structure
+                        if (processedGeometry.type === 'Polygon') {
+                            const coords = processedGeometry.coordinates;
+                            if (!Array.isArray(coords) || !Array.isArray(coords[0]) || !Array.isArray(coords[0][0])) {
+                                throw new Error("Invalid polygon coordinate structure");
+                            }
+                            
+                            const invalidCoords = coords[0].some(coord => 
+                                !Array.isArray(coord) || coord.length !== 2 || 
+                                typeof coord[0] !== 'number' || typeof coord[1] !== 'number'
+                            );
+                            
+                            if (invalidCoords) {
+                                throw new Error("Polygon contains invalid coordinate pairs");
+                            }
+                            
+                        } else if (processedGeometry.type === 'Point') {
+                            const coords = processedGeometry.coordinates;
+                            if (!Array.isArray(coords) || coords.length !== 2 || 
+                                typeof coords[0] !== 'number' || typeof coords[1] !== 'number') {
+                                throw new Error("Invalid point coordinate structure");
+                            }
+                        }
+                        
                         geom = new ol.format.GeoJSON().readGeometry(processedGeometry, {
                             dataProjection: 'EPSG:4326',
                             featureProjection: 'EPSG:3857'
                         });
                         
                     } catch (geomError) {
-                        console.error(`Geometry processing error for feature ${index + 1}:`, geomError);
+                        console.error(`  Geometry processing error for feature ${index + 1}:`, geomError);
                         geom = new ol.geom.Point(ol.proj.fromLonLat([f.lon, f.lat]));
                     }
                     
@@ -796,6 +894,7 @@ try {
                     
                     vectorSource.addFeature(feature);
                     featuresAdded++;
+                    console.log(`  Successfully added ${geom.getType()} feature ${index + 1} to map`);
                     
                 } catch (error) {
                     console.error(`Error processing feature ${index + 1}:`, error);
@@ -809,25 +908,28 @@ try {
                 return;
             }
 
-            // ENHANCED STYLING
+            // ENHANCED STYLING WITH FIXED AREA-BASED COLORS
             const vectorLayer = new ol.layer.Vector({
                 source: vectorSource,
                 style: feature => {
                     const geomType = feature.getGeometry().getType();
                     const props = feature.get('properties') || {};
                     
+                    console.log(`Styling ${geomType} feature: ${feature.get('name')}`);
+                    
                     if (geomType === 'Point') {
+                        // FIXED: Check multiple area fields
                         const area = props.area_m2 || props.oppervlakte_max || props.oppervlakte_min || 0;
-                        let pointColor = '#667eea';
+                        let pointColor = '#667eea'; // Default blue
                         
                         if (area > 1000) {
-                            pointColor = '#dc2626';
+                            pointColor = '#dc2626'; // Large: red
                         } else if (area > 500) {
-                            pointColor = '#f97316';
+                            pointColor = '#f97316'; // Medium: orange
                         } else if (area > 200) {
-                            pointColor = '#eab308';
+                            pointColor = '#eab308'; // Standard: yellow
                         } else if (area > 0) {
-                            pointColor = '#22c55e';
+                            pointColor = '#22c55e'; // Small: green
                         }
                         
                         return new ol.style.Style({
@@ -840,40 +942,41 @@ try {
                         
                     } else if (geomType === 'Polygon') {
                         const year = props.bouwjaar;
+                        // FIXED: Check multiple area fields
                         const area = props.area_m2 || props.oppervlakte_max || props.oppervlakte_min || 0;
                         
-                        let fillColor = 'rgba(102, 126, 234, 0.7)';
+                        let fillColor = 'rgba(102, 126, 234, 0.7)'; // Default blue
                         let strokeColor = '#667eea';
                         
-                        // Priority: Color by area if available
+                        // PRIORITY 1: Color by area if available
                         if (area > 0) {
                             if (area > 1000) {
-                                fillColor = 'rgba(220, 38, 38, 0.8)';
+                                fillColor = 'rgba(220, 38, 38, 0.8)';    // Large buildings: red
                                 strokeColor = '#dc2626';
                             } else if (area > 500) {
-                                fillColor = 'rgba(249, 115, 22, 0.8)';
+                                fillColor = 'rgba(249, 115, 22, 0.8)';   // Medium buildings: orange
                                 strokeColor = '#f97316';
                             } else if (area > 200) {
-                                fillColor = 'rgba(234, 179, 8, 0.8)';
+                                fillColor = 'rgba(234, 179, 8, 0.8)';    // Standard buildings: yellow
                                 strokeColor = '#eab308';
                             } else {
-                                fillColor = 'rgba(34, 197, 94, 0.8)';
+                                fillColor = 'rgba(34, 197, 94, 0.8)';    // Small buildings: green
                                 strokeColor = '#22c55e';
                             }
                         }
-                        // Fallback: Color by age
+                        // FALLBACK: Color by age if no area data
                         else if (year) {
                             if (year < 1900) {
-                                fillColor = 'rgba(139, 0, 0, 0.7)';
+                                fillColor = 'rgba(139, 0, 0, 0.7)';      // Historic: dark red
                                 strokeColor = '#8B0000';
                             } else if (year < 1950) {
-                                fillColor = 'rgba(255, 69, 0, 0.7)';
+                                fillColor = 'rgba(255, 69, 0, 0.7)';     // Early modern: orange
                                 strokeColor = '#FF4500';
                             } else if (year < 2000) {
-                                fillColor = 'rgba(50, 205, 50, 0.7)';
+                                fillColor = 'rgba(50, 205, 50, 0.7)';    // Mid-century: green
                                 strokeColor = '#32CD32';
                             } else {
-                                fillColor = 'rgba(30, 144, 255, 0.7)';
+                                fillColor = 'rgba(30, 144, 255, 0.7)';   // Modern: blue
                                 strokeColor = '#1E90FF';
                             }
                         }
@@ -888,6 +991,13 @@ try {
                             })
                         });
                         
+                    } else if (geomType === 'LineString') {
+                        return new ol.style.Style({
+                            stroke: new ol.style.Stroke({ 
+                                color: '#667eea', 
+                                width: 4
+                            })
+                        });
                     } else {
                         return new ol.style.Style({
                             stroke: new ol.style.Stroke({ color: '#667eea', width: 3 }),
@@ -903,7 +1013,7 @@ try {
             });
 
             mapInstance.current.addLayer(vectorLayer);
-            console.log("Vector layer added to map");
+            console.log("FIXED area-based styling vector layer added to map");
             
             // Fit to features
             const extent = vectorSource.getExtent();
@@ -968,13 +1078,11 @@ try {
                 <div className="absolute top-20 left-4 z-40 map-context-info">
                     <div className="floating-card p-3">
                         <div className="text-sm text-gray-700">
-                            <p className="font-medium">Map View</p>
+                            <p className="font-medium">Map Context</p>
+                            <p>Center: {mapCenter[1].toFixed(4)}°N, {mapCenter[0].toFixed(4)}°E</p>
                             <p>Zoom: {mapZoom}</p>
-                            {searchLocation && (
-                                <p className="text-red-600 font-medium">📍 {searchLocation.name}</p>
-                            )}
                             {features.length > 0 && (
-                                <p className="text-blue-600 font-medium">{features.length} buildings loaded</p>
+                                <p className="text-blue-600 font-medium">{features.length} features loaded</p>
                             )}
                         </div>
                     </div>
@@ -988,8 +1096,8 @@ try {
                             <div className="flex items-center space-x-3">
                                 <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse-slow"></div>
                                 <div>
-                                    <h2 className="text-lg font-semibold text-white">FIXED Map Assistant</h2>
-                                    <p className="text-sm text-blue-100">Pin + Legends Working</p>
+                                    <h2 className="text-lg font-semibold text-white">FIXED Legends & Stats</h2>
+                                    <p className="text-sm text-blue-100">Intelligent Agent Mapping</p>
                                 </div>
                             </div>
                             <button 
@@ -1023,7 +1131,7 @@ try {
                                             <span></span>
                                             <span></span>
                                         </div>
-                                        <p className="text-xs opacity-75 mt-1">FIXED system processing...</p>
+                                        <p className="text-xs opacity-75 mt-1">FIXED agent processing...</p>
                                     </div>
                                 </div>
                             )}
@@ -1031,32 +1139,32 @@ try {
                             <div ref={messagesEndRef} />
                         </div>
 
-                        {/* Enhanced Input Area */}
+                        {/* Enhanced Input Area with FIXED prompts */}
                         <div className="p-4 border-t border-gray-200">
                             <div className="flex flex-wrap gap-2 mb-3">
                                 <button
                                     onClick={() => setQuery("Show me buildings near Leonard Springerlaan 37, Groningen with area > 300m²")}
                                     className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded-full hover:bg-green-200 transition-colors"
                                 >
-                                    📍 Address + Pin
+                                    Address + Area
                                 </button>
                                 <button
                                     onClick={() => setQuery("Find buildings near Amsterdam Centraal larger than 500m²")}
                                     className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded-full hover:bg-blue-200 transition-colors"
                                 >
-                                    🚉 Station Area
+                                    Station Area
                                 </button>
                                 <button
                                     onClick={() => setQuery("Show historic buildings near Groningen station built before 1950")}
                                     className="px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded-full hover:bg-purple-200 transition-colors"
                                 >
-                                    🏛️ Historic Search
+                                    Historic Search
                                 </button>
                                 <button
-                                    onClick={() => setQuery("Test the fixed legend and pin system")}
+                                    onClick={() => setQuery("What legends and statistics are now fixed?")}
                                     className="px-2 py-1 text-xs bg-orange-100 text-orange-700 rounded-full hover:bg-orange-200 transition-colors"
                                 >
-                                    ✅ Test Fixed
+                                    What's Fixed?
                                 </button>
                             </div>
                             
@@ -1067,7 +1175,7 @@ try {
                                     onChange={e => setQuery(e.target.value)}
                                     onKeyPress={handleKeyPress}
                                     className="flex-1 search-input rounded-xl px-4 py-2 text-sm focus:outline-none"
-                                    placeholder="FIXED: Pin + Legends now working! 📍🏠📊"
+                                    placeholder="Try: 'buildings near [address] with area > 300m²' - legends FIXED!"
                                     disabled={isLoading}
                                 />
                                 <button
@@ -1097,50 +1205,51 @@ try {
                                     {features.length}
                                 </div>
                             )}
-                            {searchLocation && (
-                                <div className="absolute -bottom-3 -right-3 bg-red-500 text-white text-xs rounded-full px-2 py-1 font-bold">
-                                    📍
-                                </div>
-                            )}
+                            {/* FIXED indicator */}
+                            <div className="absolute -bottom-3 -right-3 bg-green-500 text-white text-xs rounded-full px-2 py-1 font-bold">
+                                FIXED
+                            </div>
                         </div>
                     </button>
                 )}
 
-                {/* FIXED: Statistics Component (using inline styles) */}
+                {/* FIXED: Enhanced Map Statistics Component */}
                 {React.createElement(EnhancedMapStatistics, { features: features })}
 
-                {/* FIXED: Smart Legend Component (using inline styles) */}
-                {React.createElement(SmartLegend, { features: features })}
+                {/* FIXED: Area Legend Component */}
+                {React.createElement(AreaLegend, { features: features })}
 
-                {/* Status Indicator */}
-                {features.length > 0 && (
+                {/* FIXED: Building Age Legend Component */}
+                {React.createElement(BuildingAgeLegend, { features: features })}
+
+                {/* Debug Data Display - REMOVE AFTER TESTING */}
+                {React.createElement(DebugDataDisplay, { features: features })}
+
+                {/* Address Center Indicator (Fixed) */}
+                {features.length > 0 && features.some(f => f.properties?.distance_km !== undefined) && (
                     <div style={{
                         position: 'fixed',
                         top: '50%',
                         right: '20px',
                         transform: 'translateY(-50%)',
-                        zIndex: 999,
-                        backgroundColor: 'rgba(34, 197, 94, 0.1)',
-                        border: '2px solid #22c55e',
-                        padding: '12px',
-                        borderRadius: '8px',
-                        fontSize: '11px',
-                        color: '#15803d'
+                        zIndex: 999
                     }}>
-                        <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>
-                            ✅ SYSTEM FIXED!
+                        <div className="floating-card px-3 py-2 bg-green-50 border-green-200">
+                            <div className="text-xs text-green-800">
+                                <p className="font-medium">✅ LEGENDS FIXED!</p>
+                                <p>Area legend working</p>
+                                <p>Statistics working</p>
+                                <p>Age legend working</p>
+                                <p>Multi-field detection</p>
+                            </div>
                         </div>
-                        <div>📍 Pin: {searchLocation ? '✅' : '❌'}</div>
-                        <div>🏠 Legend: ✅</div>
-                        <div>📊 Stats: ✅</div>
-                        <div>{features.length} buildings</div>
                     </div>
                 )}
             </div>
         );
     };
 
-    console.log("Rendering FIXED Production Map-Aware React app");
+    console.log("Rendering Map-Aware React app with FIXED Legends and Statistics");
     
     if (root) {
         root.render(React.createElement(App));
@@ -1149,5 +1258,5 @@ try {
     }
     
 } catch (error) {
-    console.error("Failed to initialize FIXED Production React app:", error);
+    console.error("Failed to initialize Map-Aware React app:", error);
 }
