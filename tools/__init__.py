@@ -1,8 +1,8 @@
 # tools/__init__.py - Updated with Flexible PDOK Tools
 
 from .kadaster_tool import KadasterBRKTool, ContactHistoryTool
-from .pdok_location import find_location_coordinates, search_dutch_address_pdok, pdok_service, test_pdok_integration
-from .pdok_intelligent_agent_tool import PDOKIntelligentAgentTool, EnhancedPDOKServiceDiscoveryTool
+from tools.enhanced_pdok_location_tool import IntelligentLocationSearchTool, SpecializedAddressSearchTool
+from .pdok_intelligent_agent_tool import EnhancedPDOKIntelligentAgent, SmartServiceDiscoveryTool
 # Import the NEW flexible PDOK tools
 from .pdok_service_discovery_tool import (
     PDOKServiceDiscoveryTool,
@@ -21,10 +21,9 @@ except ImportError:
 
 __all__ = [
     # Location tools
-    "find_location_coordinates",
-    "search_dutch_address_pdok",
-    "pdok_service", 
-    "test_pdok_integration",
+    "IntelligentLocationSearchTool",
+    "SpecializedAddressSearchTool",
+
     
     # Kadaster tools
     "KadasterBRKTool",
@@ -37,8 +36,8 @@ __all__ = [
     "PDOKDataFilterTool", 
     "PDOKMapDisplayTool",
     "PDOKBuildingsFlexibleTool",
-    "PDOKIntelligentAgentTool",
-    "EnhancedPDOKServiceDiscoveryTool",
+    "EnhancedPDOKIntelligentAgent",
+    "SmartServiceDiscoveryTool",
     "PDOKBuildingsRealTool"
 ]
 

@@ -13,27 +13,27 @@ from collections import Counter
 from datetime import datetime
 
 # Import the enhanced PDOK location functionality
-from tools.pdok_location import find_location_coordinates, search_dutch_address_pdok, pdok_service, test_pdok_integration
+from tools.enhanced_pdok_location_tool import IntelligentLocationSearchTool, SpecializedAddressSearchTool
 from tools.kadaster_tool import KadasterBRKTool, ContactHistoryTool
 
 #Import the new intelligent PDOK agent 
-from tools.pdok_intelligent_agent_tool import PDOKIntelligentAgentTool, EnhancedPDOKServiceDiscoveryTool
+from tools.pdok_intelligent_agent_tool import EnhancedPDOKIntelligentAgent, SmartServiceDiscoveryTool
 
 # Test the PDOK integration
-test_pdok_integration()
+#test_pdok_integration()
 
 
 # Import the NEW flexible PDOK tools
-from tools.pdok_service_discovery_tool import (
-    PDOKServiceDiscoveryTool,
-    PDOKDataRequestTool,
-    PDOKDataFilterTool,
-    PDOKMapDisplayTool,
-    PDOKBuildingsFlexibleTool
-)
+# from tools.pdok_service_discovery_tool import (
+#     PDOKServiceDiscoveryTool,
+#     PDOKDataRequestTool,
+#     PDOKDataFilterTool,
+#     PDOKMapDisplayTool,
+#     PDOKBuildingsFlexibleTool
+# )
 
 # Test the PDOK integration
-test_pdok_integration()
+#test_pdok_integration()
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
 load_dotenv()
@@ -379,23 +379,21 @@ def validate_and_fix_geometry(geometry):
 
 def create_agent_with_yaml_prompt():
     """Create the map-aware agent with WORKING tools and CORRECT system prompt."""
-    
+        # Load system prompt from YAML file
+    system_prompt_config = load_system_prompt("static/system_prompt.yml")
     # WORKING TOOLS - using correct names
     tools = [
-        find_location_coordinates,        # This works (as shown in logs)
-        search_dutch_address_pdok,       
+        # Existing tools
+        IntelligentLocationSearchTool(),
+        SpecializedAddressSearchTool(),
         analyze_current_map_features,
-        get_map_context_info,
-        answer_map_question,
         
-        # CRITICAL: Add the working PDOK tools
-        PDOKIntelligentAgentTool(),           # Tool name: pdok_intelligent_agent
-        EnhancedPDOKServiceDiscoveryTool(),   # Tool name: discover_pdok_services_enhanced
+        # New enhanced tools  
+        EnhancedPDOKIntelligentAgent(),  # Smart intent detection
+        SmartServiceDiscoveryTool(),     # Intelligent service discovery
         
         # Other tools
-        DuckDuckGoSearchTool(),
-        ContactHistoryTool(),
-        KadasterBRKTool()
+        DuckDuckGoSearchTool()
     ]
 
     print("🔧 Creating agent with WORKING PDOK TOOLS:")
@@ -446,12 +444,12 @@ def index():
 
 @app.route('/api/query', methods=['POST'])
 def query():
-    """Handle chat queries using the smolagent with flexible PDOK tools."""
+    """Handle chat queries using the intelligent smolagent with intent-based tool selection."""
     global current_map_state
     
-    print("\n" + "="*60)
-    print("RECEIVED MAP-AWARE QUERY REQUEST - FLEXIBLE PDOK TOOLS")
-    print("="*60)
+    print("\n" + "="*80)
+    print("RECEIVED INTELLIGENT AGENT QUERY - INTENT-BASED TOOL SELECTION")
+    print("="*80)
     
     data = request.json
     query_text = data.get('query', '')
@@ -461,6 +459,7 @@ def query():
     
     print(f"Query text: {query_text}")
     print(f"Current features count: {len(current_features)}")
+    print(f"Map context: {map_center[1]:.4f}°N, {map_center[0]:.4f}°E (zoom: {map_zoom})")
     
     # Update map state with frontend data
     if current_features:
@@ -469,9 +468,9 @@ def query():
     current_map_state["zoom"] = map_zoom
     
     try:
-        print("🏗️ Running enhanced map-aware agent with flexible PDOK tools...")
+        print("🧠 Running INTELLIGENT MAP-AWARE AGENT with intent-based tool selection...")
         
-        # Create context-aware prompt
+        # Create intelligent context-aware prompt
         context_prompt = f"""
         User query: "{query_text}"
 
@@ -480,31 +479,73 @@ def query():
         - Zoom level: {map_zoom}
         - Features on map: {len(current_features)}
 
-        IMPORTANT: The system now uses FLEXIBLE MODULAR PDOK TOOLS:
+        INTELLIGENT AGENT APPROACH:
+        You are an intelligent agent with access to various tools. Analyze the user's request to understand their intent, then select the most appropriate tools based on their descriptions and capabilities.
 
-        1. discover_pdok_services: Find available PDOK WFS services and layers
-        2. request_pdok_data: Make flexible WFS requests to any PDOK service
-        3. filter_pdok_data: Apply distance, age, area, and other filters
-        4. format_pdok_for_map: Format results for map display
-        5. get_pdok_buildings_flexible: Combined tool for building searches
+        AVAILABLE TOOL CATEGORIES:
 
-        WORKFLOW for building searches:
-        - Use get_pdok_buildings_flexible for simple building queries
-        - For complex queries, use the individual tools in sequence
-        - The tools can handle any PDOK layer, not just buildings
+        🗺️ LOCATION & GEOCODING:
+        - find_location_coordinates: Intelligent Dutch location search (addresses, cities, landmarks, postal codes)
+        - search_dutch_address: Specialized precise address search with house numbers
 
-        For GEOGRAPHIC queries: Use tools and return JSON with text_description and geojson_data
-        For GENERAL questions: Simply answer the question with plain text using final_answer()
+        🏢 BUILDING & PROPERTY DATA:
+        - enhanced_pdok_intelligent_agent: Smart building/property search with automatic intent detection
+        - discover_pdok_services_enhanced: Service discovery with availability checking
+        - pdok_intelligent_agent: Dutch geospatial data with automatic service selection
 
-        Please respond to the user's query appropriately based on the query type.
+        📊 MAP ANALYSIS & CONTEXT:
+        - analyze_current_map_features: Analyze features currently displayed on the map
+        - get_map_context_info: Get current map view context and location information
+        - answer_map_question: Answer general questions about maps and GIS
+
+        🔍 GENERAL SEARCH:
+        - DuckDuckGoSearchTool: Web search for general information
+
+        INSTRUCTIONS:
+        1. ANALYZE the user's request to understand what they want
+        2. DETERMINE the type of task (location search, building data, map analysis, general question)
+        3. SELECT appropriate tools based on their descriptions and capabilities
+        4. EXTRACT relevant parameters from the user's natural language request
+        5. EXECUTE the selected tools with proper parameters
+        6. RETURN results in appropriate format:
+           - Geographic data: JSON with text_description and geojson_data
+           - Analysis results: Structured text with insights
+           - General answers: Plain text response
+
+        EXAMPLES OF INTELLIGENT TOOL SELECTION:
+
+        User: "Show me buildings near Amsterdam Centraal"
+        Analysis: Need location + building data
+        Tools: find_location_coordinates("Amsterdam Centraal") → enhanced_pdok_intelligent_agent(user_request=...)
+
+        User: "What's at Damrak 1, Amsterdam?"
+        Analysis: Need precise address lookup
+        Tools: search_dutch_address("Damrak 1, Amsterdam")
+
+        User: "What services are available for building data?"
+        Analysis: Need service discovery information
+        Tools: discover_pdok_services_enhanced(service_type="bag")
+
+        User: "Analyze the buildings currently on the map"
+        Analysis: Need to analyze current map features
+        Tools: analyze_current_map_features()
+
+        User: "What is GIS?"
+        Analysis: General knowledge question about mapping
+        Tools: answer_map_question("What is GIS?")
+
+        Remember: Choose tools based on what the user actually needs, not predefined workflows. Read tool descriptions to understand their capabilities and select the most appropriate ones.
         """
+        
+        print("🎯 Agent will analyze intent and select appropriate tools automatically...")
+        print("📚 Available tools: Location search, Building data, Map analysis, Service discovery, General search")
         
         result = agent.run(context_prompt)
         
-        print(f"\n--- AGENT RESULT DEBUG ---")
+        print(f"\n--- INTELLIGENT AGENT RESULT DEBUG ---")
         print(f"Result type: {type(result)}")
         
-        # Try to parse the result as JSON first
+        # Process agent result with enhanced intelligence
         parsed_response = None
         if hasattr(result, 'content'):
             result_text = result.content
@@ -517,143 +558,138 @@ def query():
         
         print(f"Result text preview: {result_text[:200]}...")
         
-        # Try to parse as JSON
+        # Enhanced JSON detection and parsing
         try:
-            # Look for JSON structure in the response
+            # Look for structured response with geographic data
             import re
             json_match = re.search(r'\{.*"text_description".*"geojson_data".*\}', result_text, re.DOTALL)
             
             if json_match:
                 json_str = json_match.group(0)
                 parsed_response = json.loads(json_str)
-                print("✅ Successfully parsed JSON response with text_description and geojson_data")
+                print("✅ Found structured geographic response")
                 
-                # Validate the structure
                 if isinstance(parsed_response, dict) and 'text_description' in parsed_response and 'geojson_data' in parsed_response:
                     text_description = parsed_response['text_description']
                     geojson_data = parsed_response['geojson_data']
                     
-                    # Validate and process geojson_data
+                    # Validate and process geographic data
                     if isinstance(geojson_data, list) and len(geojson_data) > 0:
-                        # Process each feature to ensure proper format
                         processed_features = []
                         for feature in geojson_data:
                             if isinstance(feature, dict) and 'lat' in feature and 'lon' in feature:
-                                # Ensure the geometry is properly formatted
-                                if 'geometry' in feature:
-                                    validated_geom = validate_and_fix_geometry(feature['geometry'])
-                                    if validated_geom:
-                                        feature['geometry'] = validated_geom
-                                
-                                # Ensure properties are serializable
-                                if 'properties' in feature:
-                                    feature['properties'] = ensure_json_serializable(feature['properties'])
-                                
                                 # Validate coordinates
                                 if feature.get('lat', 0) != 0 and feature.get('lon', 0) != 0:
+                                    # Ensure proper serialization
+                                    if 'geometry' in feature:
+                                        validated_geom = validate_and_fix_geometry(feature['geometry'])
+                                        if validated_geom:
+                                            feature['geometry'] = validated_geom
+                                    
+                                    if 'properties' in feature:
+                                        feature['properties'] = ensure_json_serializable(feature['properties'])
+                                    
                                     processed_features.append(feature)
                         
                         if processed_features:
-                            print(f"🗺️ Processed {len(processed_features)} valid features for map display")
+                            print(f"🗺️ Processed {len(processed_features)} geographic features")
                             
                             # Update map state
                             current_map_state["features"] = processed_features
                             current_map_state["last_updated"] = datetime.now().isoformat()
                             
-                            # Return the separated response
                             return jsonify({
                                 "response": text_description,
-                                "geojson_data": processed_features
+                                "geojson_data": processed_features,
+                                "agent_type": "intelligent_geographic",
+                                "tools_used": "intent_based_selection"
                             })
                     
-                    # If geojson_data is empty or invalid, return just the text
-                    print("⚠️ GeoJSON data is empty or invalid, returning text only")
-                    return jsonify({"response": text_description})
+                    # Text-only geographic response
+                    print("📝 Geographic query with text-only response")
+                    return jsonify({
+                        "response": text_description,
+                        "agent_type": "intelligent_text",
+                        "tools_used": "intent_based_selection"
+                    })
                     
-            else:
-                print("❌ No JSON structure found in response")
-                
         except json.JSONDecodeError as e:
-            print(f"❌ JSON parsing error: {e}")
+            print(f"⚠️ JSON parsing note: {e}")
         except Exception as e:
-            print(f"❌ Error processing JSON response: {e}")
+            print(f"⚠️ Response processing note: {e}")
         
-        # Search for building data in agent execution logs (fallback)
+        # Search agent execution logs for geographic data (enhanced fallback)
         building_data = None
         text_description = None
         
         if hasattr(agent, 'logs') or hasattr(agent, 'memory'):
-            print("🔍 Searching agent execution history for building data...")
+            print("🔍 Analyzing agent execution for geographic data...")
             
-            # Try both old logs and new memory.steps
+            # Check multiple log sources
             log_sources = []
             if hasattr(agent, 'memory') and hasattr(agent.memory, 'steps'):
                 log_sources.append(('memory.steps', agent.memory.steps))
-                print(f"   📚 Found memory.steps with {len(agent.memory.steps)} steps")
             if hasattr(agent, 'logs'):
                 log_sources.append(('logs', agent.logs))
-                print(f"   📚 Found logs with {len(agent.logs)} entries")
             
             for source_name, log_entries in log_sources:
-                print(f"   🔍 Searching {source_name}...")
+                print(f"   📚 Checking {source_name} ({len(log_entries)} entries)...")
                 
                 for log_index, log_entry in enumerate(reversed(log_entries)):
-                    # Multiple ways to find tool calls
+                    # Multiple methods to find tool results
                     tool_calls_to_check = []
                     
-                    # Method 1: Direct tool_calls attribute
+                    # Check various log entry structures
                     if hasattr(log_entry, 'tool_calls'):
                         tool_calls_to_check.extend(log_entry.tool_calls)
                     
-                    # Method 2: step_logs -> tool_calls
                     if hasattr(log_entry, 'step_logs'):
                         for step_log in log_entry.step_logs:
                             if hasattr(step_log, 'tool_calls'):
                                 tool_calls_to_check.extend(step_log.tool_calls)
                     
-                    # Method 3: action or tool_call attributes (for new memory structure)
-                    if hasattr(log_entry, 'action') and hasattr(log_entry.action, 'tool_calls'):
-                        tool_calls_to_check.extend(log_entry.action.tool_calls)
+                    if hasattr(log_entry, 'action'):
+                        if hasattr(log_entry.action, 'tool_calls'):
+                            tool_calls_to_check.extend(log_entry.action.tool_calls)
+                        elif hasattr(log_entry.action, 'result'):
+                            # Direct action result
+                            result_data = log_entry.action.result
+                            if isinstance(result_data, dict):
+                                if 'text_description' in result_data and 'geojson_data' in result_data:
+                                    text_description = result_data['text_description']
+                                    building_data = result_data['geojson_data']
+                                    print(f"🏗️ Found combined response in action.result")
+                                    break
                     
-                    # Method 4: Direct action.result (for new memory structure)
-                    if hasattr(log_entry, 'action') and hasattr(log_entry.action, 'result'):
-                        result_data = log_entry.action.result
-                        if isinstance(result_data, dict):
-                            if 'text_description' in result_data and 'geojson_data' in result_data:
-                                text_description = result_data['text_description']
-                                building_data = result_data['geojson_data']
-                                print(f"🏗️  ✅ Found combined response in action.result")
-                                break
-                    
-                    # Method 5: Check individual tool calls
+                    # Check individual tool call results
                     for tool_call in tool_calls_to_check:
                         if hasattr(tool_call, 'result'):
                             tool_result = tool_call.result
                             
-                            # Check if this is our combined response format
+                            # Look for structured geographic response
                             if (isinstance(tool_result, dict) and 
                                 'text_description' in tool_result and 
                                 'geojson_data' in tool_result):
                                 
                                 text_description = tool_result['text_description']
                                 building_data = tool_result['geojson_data']
-                                print(f"🏗️  ✅ Found combined response in tool call result")
+                                tool_name = getattr(tool_call, 'tool_name', 'unknown')
+                                print(f"🎯 Found structured response from tool: {tool_name}")
                                 break
                             
-                            # Legacy format check (array of buildings)
-                            elif (isinstance(tool_result, list) and len(tool_result) > 0):
+                            # Look for list of geographic features
+                            elif isinstance(tool_result, list) and len(tool_result) > 0:
                                 first_item = tool_result[0]
                                 if (isinstance(first_item, dict) and
                                     'geometry' in first_item and 'lat' in first_item and 
                                     'lon' in first_item and 'name' in first_item and
                                     first_item.get('lat', 0) != 0 and first_item.get('lon', 0) != 0):
                                     
-                                    # Check that this is NOT mock data
-                                    if not any('mock' in str(first_item).lower() for first_item in tool_result):
-                                        building_data = tool_result
-                                        text_description = f"Found {len(building_data)} real buildings from flexible PDOK search and displayed them on the map."
-                                        print(f"🏗️  ✅ Found building data format: {len(building_data)} buildings")
-                                        break
+                                    building_data = tool_result
+                                    tool_name = getattr(tool_call, 'tool_name', 'geographic_tool')
+                                    text_description = f"Found {len(building_data)} features using intelligent tool selection via {tool_name}"
+                                    print(f"🗺️ Found geographic feature list from: {tool_name}")
+                                    break
                     
                     if building_data and text_description:
                         break
@@ -661,21 +697,15 @@ def query():
                 if building_data and text_description:
                     break
         
-        # If we found combined data, return it properly formatted
+        # Process found geographic data
         if building_data and text_description:
-            print(f"🗺️ Processing combined response with {len(building_data) if isinstance(building_data, list) else 'unknown'} buildings")
+            print(f"🗺️ Processing intelligent agent geographic response")
             
-            # Validate and serialize building data
             if isinstance(building_data, list):
                 serialized_buildings = []
                 for building in building_data:
                     try:
                         if isinstance(building, dict):
-                            # Skip mock data
-                            if any('mock' in str(value).lower() for value in building.values()):
-                                print("⚠️ Skipping mock data entry")
-                                continue
-                                
                             serialized_building = ensure_json_serializable(building)
                             
                             if 'geometry' in serialized_building:
@@ -690,29 +720,43 @@ def query():
                                         serialized_buildings.append(serialized_building)
                                         
                     except Exception as e:
-                        print(f"❌ Error processing building: {e}")
+                        print(f"❌ Error processing geographic feature: {e}")
                         continue
                 
                 if serialized_buildings:
-                    print(f"✅ Returning flexible combined response: text + {len(serialized_buildings)} buildings")
+                    print(f"✅ Returning intelligent response: text + {len(serialized_buildings)} features")
                     
                     current_map_state["features"] = serialized_buildings
                     current_map_state["last_updated"] = datetime.now().isoformat()
                     
                     return jsonify({
                         "response": text_description,
-                        "geojson_data": serialized_buildings
+                        "geojson_data": serialized_buildings,
+                        "agent_type": "intelligent_geographic_processed",
+                        "tools_used": "intent_based_selection"
                     })
         
-        # Handle text-only responses (analysis, questions, etc.)
-        print(f"💬 Returning text-only response: {str(result_text)[:200]}...")
-        return jsonify({"response": str(result_text)})
+        # Handle pure text responses (analysis, questions, etc.)
+        print(f"💬 Returning intelligent text response")
+        return jsonify({
+            "response": str(result_text),
+            "agent_type": "intelligent_text",
+            "tools_used": "intent_based_selection"
+        })
         
     except Exception as e:
-        error_msg = f"Flexible map-aware agent error: {str(e)}"
+        error_msg = f"Intelligent agent error: {str(e)}"
         print(f"❌ ERROR: {error_msg}")
-        print("="*60 + "\n")
-        return jsonify({"error": error_msg})
+        print("="*80 + "\n")
+        return jsonify({
+            "error": error_msg,
+            "agent_type": "error",
+            "tools_used": "none"
+        })
+
+    finally:
+        print("🎉 INTELLIGENT AGENT QUERY COMPLETED")
+        print("="*80 + "\n")
 
 @app.route('/api/map-state', methods=['GET'])
 def get_map_state():
