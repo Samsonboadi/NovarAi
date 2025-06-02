@@ -1,8 +1,9 @@
-# tools/__init__.py - Updated with Flexible PDOK Tools
+# tools/__init__.py 
 
 from .kadaster_tool import KadasterBRKTool, ContactHistoryTool
 from tools.enhanced_pdok_location_tool import IntelligentLocationSearchTool, SpecializedAddressSearchTool
 from .pdok_intelligent_agent_tool import EnhancedPDOKIntelligentAgent, SmartServiceDiscoveryTool
+from .pdok_modular_tools import PDOKLocationSearchTool 
 # Import the NEW flexible PDOK tools
 from .pdok_service_discovery_tool import (
     PDOKServiceDiscoveryTool,
@@ -13,32 +14,33 @@ from .pdok_service_discovery_tool import (
 )
 
 # Legacy building tool (deprecated but included for compatibility)
-try:
-    from .pdok_building_tool import PDOKBuildingsRealTool
-except ImportError:
-    print("⚠️ Legacy PDOKBuildingsRealTool not found - using flexible tools only")
-    PDOKBuildingsRealTool = None
+#try:
+    #from .pdok_building_tool import PDOKBuildingsRealTool
+#except ImportError:
+    #print("⚠️ Legacy PDOKBuildingsRealTool not found - using flexible tools only")
+    #PDOKBuildingsRealTool = None
 
 __all__ = [
     # Location tools
     "IntelligentLocationSearchTool",
     "SpecializedAddressSearchTool",
+    "PDOKLocationSearchTool",
 
     
     # Kadaster tools
-    "KadasterBRKTool",
-    "ContactHistoryTool",
+    #"KadasterBRKTool",
+    #"ContactHistoryTool",
     
     
     # NEW Flexible PDOK tools
-    "PDOKServiceDiscoveryTool",
-    "PDOKDataRequestTool",
-    "PDOKDataFilterTool", 
-    "PDOKMapDisplayTool",
-    "PDOKBuildingsFlexibleTool",
+    #"PDOKServiceDiscoveryTool",
+    #"PDOKDataRequestTool",
+    #"PDOKDataFilterTool", 
+    #"PDOKMapDisplayTool",
+    #"PDOKBuildingsFlexibleTool",
     "EnhancedPDOKIntelligentAgent",
     "SmartServiceDiscoveryTool",
-    "PDOKBuildingsRealTool"
+    #"PDOKBuildingsRealTool"
 ]
 
 # Print info about available tools
@@ -62,9 +64,7 @@ def print_available_tools():
     print("  • PDOKMapDisplayTool - Format data for map display")
     print("  • PDOKBuildingsFlexibleTool - Combined building search")
     
-    if PDOKBuildingsRealTool:
-        print("\n⚠️ LEGACY TOOLS:")
-        print("  • PDOKBuildingsRealTool - (DEPRECATED) Use PDOKBuildingsFlexibleTool instead")
+
     
     print("\n✨ ADVANTAGES OF FLEXIBLE TOOLS:")
     print("  ✅ Modular design - use individual tools or combined")

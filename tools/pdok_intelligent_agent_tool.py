@@ -1,4 +1,4 @@
-# tools/enhanced_pdok_intelligent_agent.py
+# tools/pdok_intelligent_agent_tool.py
 import math
 import re
 import requests
@@ -133,34 +133,58 @@ class EnhancedPDOKIntelligentAgent(Tool):
             print("⚠️ PyProj not available - coordinate transformation limited")
     
     def forward(self, user_request: str, max_features: int = 50, search_radius_km: float = 5.0) -> Dict:
-        """
-        Process a natural language request and return appropriate PDOK data.
+        import json  # Ensure JSON module is available
         
-        Args:
-            user_request: Natural language request
-            max_features: Maximum number of results to return
-            search_radius_km: Search radius in kilometers
-            
-        Returns:
-            Dictionary with text_description and geojson_data
-        """
         try:
             print(f"🤖 Enhanced Agent Processing: {user_request}")
             
-            # Step 1: Analyze the request and detect intent
+            # Analyze request intent
             analysis = self._analyze_request_intent(user_request)
             print(f"🔍 Intent Analysis: {analysis}")
             
-            # Step 2: Extract location from request
+            # Extract location
             location_info = self._extract_location(user_request)
             if location_info and not location_info.get('error'):
                 print(f"📍 Location found: {location_info.get('name')} at {location_info.get('lat'):.6f}, {location_info.get('lon'):.6f}")
             else:
                 print(f"⚠️ No specific location found in request")
+                return {
+                    "text_description": "No specific location provided in the request.",
+                    "geojson_data": [],
+                    "error": "Location not found"
+                }
             
-            # Step 3: Build and execute PDOK query
+            # Use search_pdok_buildings for building searches
+            if analysis['intent'] == 'building_search':
+                from tools.pdok_modular_tools import PDOKBuildingSearchTool
+                building_tool = PDOKBuildingSearchTool()
+                
+                result = building_tool.forward(
+                    lat=location_info['lat'],
+                    lon=location_info['lon'],
+                    radius_km=search_radius_km,
+                    min_area=analysis['filters'].get('min_area'),
+                    max_year=analysis['filters'].get('max_year'),
+                    max_buildings=max_features
+                )
+                
+                if result.get('error'):
+                    return {
+                        "text_description": f"❌ Building search failed: {result['error']}",
+                        "geojson_data": [],
+                        "error": result['error']
+                    }
+                
+                return {
+                    "text_description": result['text_description'],
+                    "geojson_data": result['geojson_data'],
+                    "intent_detected": analysis['intent'],
+                    "location_found": location_info['name'],
+                    "service_used": "bag/bag:pand"
+                }
+            
+            # Fallback to existing query execution for other intents
             query_result = self._execute_pdok_query(analysis, location_info, max_features, search_radius_km)
-            
             if query_result.get('error'):
                 return {
                     "text_description": f"❌ Query failed: {query_result['error']}",
@@ -168,29 +192,17 @@ class EnhancedPDOKIntelligentAgent(Tool):
                     "error": query_result['error']
                 }
             
-            # Step 4: Process and format results
-            processed_features = self._process_results(
-                query_result.get('features', []), 
-                analysis, 
-                location_info
-            )
-            
-            # Step 5: Generate response description
-            description = self._generate_description(
-                analysis, 
-                processed_features, 
-                location_info, 
-                user_request
-            )
+            processed_features = self._process_results(query_result.get('features', []), analysis, location_info)
+            description = self._generate_description(analysis, processed_features, location_info, user_request)
             
             return {
                 "text_description": description,
                 "geojson_data": processed_features,
-                "intent_detected": analysis.get('intent'),
-                "location_found": location_info.get('name') if location_info else None,
+                "intent_detected": analysis['intent'],
+                "location_found": location_info['name'] if location_info else None,
                 "service_used": f"{analysis.get('service')}/{analysis.get('layer')}"
             }
-            
+        
         except Exception as e:
             error_msg = f"Enhanced agent error: {str(e)}"
             print(f"❌ {error_msg}")
@@ -201,18 +213,8 @@ class EnhancedPDOKIntelligentAgent(Tool):
             }
     
     def _analyze_request_intent(self, request: str) -> Dict:
-        """
-        Analyze the user request to detect intent and determine appropriate service/layer.
-        
-        Args:
-            request: User's natural language request
-            
-        Returns:
-            Dictionary with intent analysis results
-        """
         request_lower = request.lower()
         
-        # Default analysis structure
         analysis = {
             'intent': 'general_search',
             'service': 'bag',
@@ -223,7 +225,6 @@ class EnhancedPDOKIntelligentAgent(Tool):
             'confidence': 0.0
         }
         
-        # Intent detection scoring
         intent_scores = {}
         
         for intent_name, intent_config in self.intent_patterns.items():
@@ -232,8 +233,12 @@ class EnhancedPDOKIntelligentAgent(Tool):
             
             for keyword in intent_config['keywords']:
                 if keyword in request_lower:
-                    score += len(keyword)  # Longer keywords get higher scores
+                    score += len(keyword)
                     keywords_found.append(keyword)
+            
+            # Boost score for location-specific queries
+            if any(word in request_lower for word in ['near', 'around', 'in', 'at']):
+                score += 10
             
             if score > 0:
                 intent_scores[intent_name] = {
@@ -242,7 +247,6 @@ class EnhancedPDOKIntelligentAgent(Tool):
                     'config': intent_config
                 }
         
-        # Select best intent
         if intent_scores:
             best_intent = max(intent_scores.keys(), key=lambda x: intent_scores[x]['score'])
             best_config = intent_scores[best_intent]['config']
@@ -250,13 +254,12 @@ class EnhancedPDOKIntelligentAgent(Tool):
             analysis.update({
                 'intent': best_intent,
                 'service': best_config['service'],
-                'layer': best_config['layer'], 
+                'layer': best_config['layer'],
                 'data_type': best_intent.replace('_search', ''),
                 'keywords_found': intent_scores[best_intent]['keywords'],
                 'confidence': intent_scores[best_intent]['score'] / len(request)
             })
         
-        # Extract filters from request
         analysis['filters'] = self._extract_filters(request, analysis['layer'])
         
         print(f"🎯 Intent detected: {analysis['intent']} (confidence: {analysis['confidence']:.2f})")
@@ -267,16 +270,9 @@ class EnhancedPDOKIntelligentAgent(Tool):
     def _extract_location(self, request: str) -> Optional[Dict]:
         """
         Extract location information from the request.
-        
-        Args:
-            request: User's natural language request
-            
-        Returns:
-            Location information dictionary or None
         """
-        # Common location indicators
         location_patterns = [
-            r'(?:near|in|at|around|close to|by)\s+([^,\s]+(?:\s+[^,\s]+)*)',
+            r'(?:near|in|at|around|close to)\s+([^,\s]+(?:\s+[^,\s]+)*)',
             r'(?:in|at)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)',
             r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(?:area|region|city)',
         ]
@@ -285,16 +281,15 @@ class EnhancedPDOKIntelligentAgent(Tool):
             matches = re.findall(pattern, request, re.IGNORECASE)
             for match in matches:
                 location_text = match.strip()
-                
-                # Skip common words that aren't locations
                 skip_words = ['large', 'small', 'old', 'new', 'big', 'many', 'with', 'area', 'buildings']
                 if any(word in location_text.lower() for word in skip_words):
                     continue
                 
-                # Try to geocode the location
                 try:
-                    from tools.pdok_location import find_location_coordinates
-                    location_data = find_location_coordinates(location_text)
+                    # Correct import
+                    from tools.enhanced_pdok_location_tool import IntelligentLocationSearchTool
+                    location_tool = IntelligentLocationSearchTool()
+                    location_data = location_tool.forward(location_text)
                     
                     if not location_data.get('error'):
                         print(f"✅ Location geocoded: {location_text} → {location_data.get('lat'):.6f}, {location_data.get('lon'):.6f}")
@@ -306,20 +301,9 @@ class EnhancedPDOKIntelligentAgent(Tool):
         return None
     
     def _extract_filters(self, request: str, layer: str) -> Dict:
-        """
-        Extract filters from the natural language request.
-        
-        Args:
-            request: User's natural language request
-            layer: Selected PDOK layer
-            
-        Returns:
-            Dictionary of filters to apply
-        """
         filters = {}
         request_lower = request.lower()
         
-        # Area/size filters
         area_patterns = [
             r'area\s*[>≥]\s*(\d+)',
             r'larger\s+than\s+(\d+)\s*m²?',
@@ -337,10 +321,9 @@ class EnhancedPDOKIntelligentAgent(Tool):
                     filters['min_area'] = area_value
                 elif layer == 'bag:verblijfsobject':
                     filters['min_oppervlakte'] = area_value
-                print(f"📏 Area filter detected: ≥ {area_value}m²")
+                print(f"📏 Area filter extracted: ≥ {area_value}m²")
                 break
         
-        # Year/age filters
         year_patterns = [
             r'built\s+before\s+(\d{4})',
             r'older\s+than\s+(\d+)\s+years?',
@@ -355,7 +338,7 @@ class EnhancedPDOKIntelligentAgent(Tool):
             match = re.search(pattern, request_lower)
             if match:
                 if pattern in ['historic', 'ancient', 'old']:
-                    filters['max_year'] = 1950  # Historic buildings
+                    filters['max_year'] = 1950
                     print(f"🏛️ Historic building filter applied (before 1950)")
                 else:
                     year_value = int(match.group(1))
@@ -363,65 +346,34 @@ class EnhancedPDOKIntelligentAgent(Tool):
                         filters['max_year'] = 2024 - year_value
                     else:
                         filters['max_year'] = year_value
-                    print(f"📅 Year filter detected: ≤ {filters.get('max_year')}")
+                    print(f"📅 Year filter extracted: ≤ {filters.get('max_year')}")
                 break
-        
-        # Usage type filters (for verblijfsobject)
-        if layer == 'bag:verblijfsobject':
-            usage_patterns = {
-                'residential': ['woonfunctie'],
-                'commercial': ['winkelfunctie', 'kantoorfunctie'],
-                'office': ['kantoorfunctie'],
-                'shop': ['winkelfunctie'],
-                'industrial': ['industriefunctie']
-            }
-            
-            for usage_type, pdok_values in usage_patterns.items():
-                if usage_type in request_lower:
-                    filters['gebruiksdoel'] = pdok_values[0]
-                    print(f"🏢 Usage filter detected: {usage_type}")
-                    break
         
         return filters
     
     def _execute_pdok_query(self, analysis: Dict, location_info: Optional[Dict], 
-                           max_features: int, search_radius_km: float) -> Dict:
-        """
-        Execute the PDOK WFS query based on analysis results.
-        
-        Args:
-            analysis: Intent analysis results
-            location_info: Location information
-            max_features: Maximum features to return
-            search_radius_km: Search radius in kilometers
-            
-        Returns:
-            Query results with features or error
-        """
+                        max_features: int, search_radius_km: float) -> Dict:
         try:
             service_config = self.services[analysis['service']]
             service_url = service_config['url']
             layer_name = analysis['layer']
             
-            # Build WFS parameters
             params = {
                 'service': 'WFS',
                 'version': '2.0.0',
                 'request': 'GetFeature',
                 'typeName': layer_name,
                 'outputFormat': 'application/json',
-                'count': min(max_features * 3, 1000),  # Get extra for filtering
+                'count': min(max_features * 3, 1000),
                 'srsName': 'EPSG:28992'
             }
             
-            # Add spatial filter if location is provided
             if location_info and not location_info.get('error'):
                 bbox = self._create_spatial_bbox(location_info, search_radius_km)
                 if bbox:
                     params['bbox'] = f"{bbox[0]},{bbox[1]},{bbox[2]},{bbox[3]},EPSG:28992"
                     print(f"🗺️ Spatial filter applied: {search_radius_km}km radius")
             
-            # Add attribute filters
             cql_filters = self._build_cql_filters(analysis['filters'], layer_name)
             if cql_filters:
                 params['cql_filter'] = cql_filters
@@ -430,7 +382,6 @@ class EnhancedPDOKIntelligentAgent(Tool):
             print(f"🚀 Executing PDOK query: {service_url}")
             print(f"📋 Layer: {layer_name}")
             
-            # Make the request
             response = requests.get(service_url, params=params, timeout=30)
             response.raise_for_status()
             
@@ -440,11 +391,15 @@ class EnhancedPDOKIntelligentAgent(Tool):
             print(f"📦 PDOK returned {len(features)} features")
             
             return {"features": features}
-            
+        
         except requests.exceptions.RequestException as e:
-            return {"error": f"PDOK request failed: {str(e)}"}
+            error_msg = f"PDOK API request failed: {str(e)}"
+            print(f"❌ {error_msg}")
+            return {"error": error_msg}
         except Exception as e:
-            return {"error": f"Query execution error: {str(e)}"}
+            error_msg = f"Query execution error: {str(e)}"
+            print(f"❌ {error_msg}")
+            return {"error": error_msg}
     
     def _create_spatial_bbox(self, location_info: Dict, radius_km: float) -> Optional[List[float]]:
         """

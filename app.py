@@ -15,25 +15,12 @@ from datetime import datetime
 # Import the enhanced PDOK location functionality
 from tools.enhanced_pdok_location_tool import IntelligentLocationSearchTool, SpecializedAddressSearchTool
 from tools.kadaster_tool import KadasterBRKTool, ContactHistoryTool
-
+from tools.pdok_modular_tools import PDOKLocationSearchTool
 #Import the new intelligent PDOK agent 
 from tools.pdok_intelligent_agent_tool import EnhancedPDOKIntelligentAgent, SmartServiceDiscoveryTool
 
-# Test the PDOK integration
-#test_pdok_integration()
 
 
-# Import the NEW flexible PDOK tools
-# from tools.pdok_service_discovery_tool import (
-#     PDOKServiceDiscoveryTool,
-#     PDOKDataRequestTool,
-#     PDOKDataFilterTool,
-#     PDOKMapDisplayTool,
-#     PDOKBuildingsFlexibleTool
-# )
-
-# Test the PDOK integration
-#test_pdok_integration()
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
 load_dotenv()
@@ -383,18 +370,16 @@ def create_agent_with_yaml_prompt():
     system_prompt_config = load_system_prompt("static/system_prompt.yml")
     # WORKING TOOLS - using correct names
     tools = [
-        # Existing tools
-        IntelligentLocationSearchTool(),
-        SpecializedAddressSearchTool(),
-        analyze_current_map_features,
-        
-        # New enhanced tools  
-        EnhancedPDOKIntelligentAgent(),  # Smart intent detection
-        SmartServiceDiscoveryTool(),     # Intelligent service discovery
-        
-        # Other tools
-        DuckDuckGoSearchTool()
-    ]
+            IntelligentLocationSearchTool(),
+            SpecializedAddressSearchTool(),
+            PDOKLocationSearchTool(),
+            EnhancedPDOKIntelligentAgent(),
+            SmartServiceDiscoveryTool(),
+            analyze_current_map_features,
+            get_map_context_info,
+            answer_map_question,
+            DuckDuckGoSearchTool(),
+        ]
 
     print("🔧 Creating agent with WORKING PDOK TOOLS:")
     for tool in tools:
@@ -560,41 +545,40 @@ def query():
         
         # Enhanced JSON detection and parsing
         try:
-            # Look for structured response with geographic data
-            import re
-            json_match = re.search(r'\{.*"text_description".*"geojson_data".*\}', result_text, re.DOTALL)
+            result = agent.run(context_prompt)
+            parsed_response = None
             
-            if json_match:
-                json_str = json_match.group(0)
-                parsed_response = json.loads(json_str)
-                print("✅ Found structured geographic response")
-                
-                if isinstance(parsed_response, dict) and 'text_description' in parsed_response and 'geojson_data' in parsed_response:
-                    text_description = parsed_response['text_description']
-                    geojson_data = parsed_response['geojson_data']
+            if hasattr(result, 'content'):
+                result_text = result.content
+            elif hasattr(result, 'text'):
+                result_text = result.text
+            elif isinstance(result, str):
+                result_text = result
+            else:
+                result_text = str(result)
+            
+            try:
+                json_match = re.search(r'\{.*"text_description".*"geojson_data".*\}', result_text, re.DOTALL)
+                if json_match:
+                    json_str = json_match.group(0)
+                    parsed_response = json.loads(json_str)
                     
-                    # Validate and process geographic data
-                    if isinstance(geojson_data, list) and len(geojson_data) > 0:
+                    if isinstance(parsed_response, dict) and 'text_description' in parsed_response and 'geojson_data' in parsed_response:
+                        text_description = parsed_response['text_description']
+                        geojson_data = parsed_response['geojson_data']
+                        
                         processed_features = []
                         for feature in geojson_data:
                             if isinstance(feature, dict) and 'lat' in feature and 'lon' in feature:
-                                # Validate coordinates
                                 if feature.get('lat', 0) != 0 and feature.get('lon', 0) != 0:
-                                    # Ensure proper serialization
+                                    feature = ensure_json_serializable(feature)
                                     if 'geometry' in feature:
                                         validated_geom = validate_and_fix_geometry(feature['geometry'])
                                         if validated_geom:
                                             feature['geometry'] = validated_geom
-                                    
-                                    if 'properties' in feature:
-                                        feature['properties'] = ensure_json_serializable(feature['properties'])
-                                    
                                     processed_features.append(feature)
                         
                         if processed_features:
-                            print(f"🗺️ Processed {len(processed_features)} geographic features")
-                            
-                            # Update map state
                             current_map_state["features"] = processed_features
                             current_map_state["last_updated"] = datetime.now().isoformat()
                             
@@ -604,19 +588,29 @@ def query():
                                 "agent_type": "intelligent_geographic",
                                 "tools_used": "intent_based_selection"
                             })
-                    
-                    # Text-only geographic response
-                    print("📝 Geographic query with text-only response")
-                    return jsonify({
-                        "response": text_description,
-                        "agent_type": "intelligent_text",
-                        "tools_used": "intent_based_selection"
-                    })
-                    
-        except json.JSONDecodeError as e:
-            print(f"⚠️ JSON parsing note: {e}")
+                        
+                        return jsonify({
+                            "response": text_description,
+                            "agent_type": "intelligent_text",
+                            "tools_used": "intent_based_selection"
+                        })
+            
+            except json.JSONDecodeError as e:
+                print(f"⚠️ JSON parsing error: {e}")
+                return jsonify({
+                    "response": result_text,
+                    "agent_type": "intelligent_text",
+                    "tools_used": "intent_based_selection"
+                })
+            
         except Exception as e:
-            print(f"⚠️ Response processing note: {e}")
+            error_msg = f"Intelligent agent error: {str(e)}"
+            print(f"❌ ERROR: {error_msg}")
+            return jsonify({
+                "error": error_msg,
+                "agent_type": "error",
+                "tools_used": "none"
+            })
         
         # Search agent execution logs for geographic data (enhanced fallback)
         building_data = None

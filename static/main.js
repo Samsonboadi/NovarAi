@@ -1,3 +1,4 @@
+//static/main.js
 console.log("Loading FIXED Production Map-Aware PDOK Chat Assistant");
 
 try {
