@@ -543,12 +543,88 @@ try {
 
         // Show pin when searchLocation is set
         useEffect(() => {
-            if (searchLocation && locationPinRef.current && mapInstance.current) {
-                console.log(`📍 Adding location pin at: ${searchLocation.lat}, ${searchLocation.lon}`);
-                const pinCoords = ol.proj.fromLonLat([searchLocation.lon, searchLocation.lat]);
-                locationPinRef.current.setPosition(pinCoords);
+            console.log("🔄 SEARCH LOCATION useEffect TRIGGERED");
+            console.log("  - searchLocation:", searchLocation);
+            console.log("  - locationPinRef.current:", !!locationPinRef.current);
+            console.log("  - mapInstance.current:", !!mapInstance.current);
+            
+            if (searchLocation) {
+                console.log("📍 SEARCH LOCATION DATA:");
+                console.log("  - Name:", searchLocation.name);
+                console.log("  - Latitude:", searchLocation.lat, typeof searchLocation.lat);
+                console.log("  - Longitude:", searchLocation.lon, typeof searchLocation.lon);
+                
+                if (locationPinRef.current && mapInstance.current) {
+                    console.log("🎯 POSITIONING SEARCH LOCATION PIN:");
+                    
+                    // Validate coordinates
+                    if (isNaN(searchLocation.lat) || isNaN(searchLocation.lon)) {
+                        console.error("❌ INVALID SEARCH LOCATION COORDINATES:");
+                        console.error("  - lat:", searchLocation.lat, "isNaN:", isNaN(searchLocation.lat));
+                        console.error("  - lon:", searchLocation.lon, "isNaN:", isNaN(searchLocation.lon));
+                        return;
+                    }
+                    
+                    // Check if coordinates are within reasonable bounds for Netherlands
+                    if (searchLocation.lat < 50.5 || searchLocation.lat > 54.0 || 
+                        searchLocation.lon < 3.0 || searchLocation.lon > 7.5) {
+                        console.warn("⚠️ SEARCH LOCATION OUTSIDE NETHERLANDS BOUNDS:");
+                        console.warn("  - Coordinates:", searchLocation.lat, searchLocation.lon);
+                        console.warn("  - Expected: lat 50.5-54.0, lon 3.0-7.5");
+                    }
+                    
+                    try {
+                        const pinCoords = ol.proj.fromLonLat([searchLocation.lon, searchLocation.lat]);
+                        console.log("🗺️ COORDINATE TRANSFORMATION:");
+                        console.log("  - Input WGS84:", [searchLocation.lon, searchLocation.lat]);
+                        console.log("  - Output map projection:", pinCoords);
+                        
+                        locationPinRef.current.setPosition(pinCoords);
+                        console.log("✅ SEARCH LOCATION PIN POSITIONED SUCCESSFULLY");
+                        
+                        // Verify the pin position was set
+                        const currentPosition = locationPinRef.current.getPosition();
+                        console.log("🔍 VERIFICATION - Pin position after setting:", currentPosition);
+                        
+                        // Update pin label with location name
+                        const pinElement = locationPinRef.current.getElement();
+                        if (pinElement) {
+                            console.log("🏷️ UPDATING PIN LABEL");
+                            const labelElement = pinElement.querySelector('[style*="Search Location"]');
+                            if (labelElement) {
+                                const shortName = searchLocation.name.length > 20 
+                                    ? searchLocation.name.substring(0, 20) + "..." 
+                                    : searchLocation.name;
+                                labelElement.textContent = shortName;
+                                console.log("✅ PIN LABEL UPDATED TO:", shortName);
+                            } else {
+                                console.warn("⚠️ PIN LABEL ELEMENT NOT FOUND");
+                            }
+                        } else {
+                            console.warn("⚠️ PIN ELEMENT NOT FOUND");
+                        }
+                        
+                    } catch (coordError) {
+                        console.error("❌ ERROR IN COORDINATE TRANSFORMATION:", coordError);
+                    }
+                    
+                } else {
+                    console.error("❌ MISSING REQUIRED REFERENCES:");
+                    console.error("  - locationPinRef.current:", !!locationPinRef.current);
+                    console.error("  - mapInstance.current:", !!mapInstance.current);
+                }
+            } else {
+                console.log("📍 NO SEARCH LOCATION TO DISPLAY");
             }
         }, [searchLocation]);
+
+
+        useEffect(() => {
+            console.log("🔄 SEARCH LOCATION STATE CHANGED:");
+            console.log("  - Previous:", "unknown"); // React doesn't give us previous value
+            console.log("  - Current:", searchLocation);
+        }, [searchLocation]);
+
 
         // Switch between map views
         const switchMapView = (view) => {
@@ -580,7 +656,7 @@ try {
             setQuery('');
 
             try {
-                console.log("Sending query to backend:", currentQuery);
+                console.log("🚀 Sending query to backend:", currentQuery);
                 
                 const res = await fetch('/api/query', {
                     method: 'POST',
@@ -594,12 +670,63 @@ try {
                 });
                 
                 const data = await res.json();
-                console.log("Received data from backend:", data);
+                console.log("📦 FULL RESPONSE FROM BACKEND:", data);
+                
+                // DEBUG: Check specifically for search_location
+                console.log("🔍 CHECKING FOR SEARCH LOCATION IN RESPONSE:");
+                console.log("  - data.search_location exists:", !!data.search_location);
+                console.log("  - search_location content:", data.search_location);
                 
                 let responseContent = '';
                 let foundBuildings = false;
                 
-                // Handle combined response format
+                // ENHANCED: Handle search location from backend response
+                if (data && data.search_location) {
+                    const searchLoc = data.search_location;
+                    console.log("🎯 PROCESSING SEARCH LOCATION FROM BACKEND:");
+                    console.log("  - Name:", searchLoc.name);
+                    console.log("  - Latitude:", searchLoc.lat);
+                    console.log("  - Longitude:", searchLoc.lon);
+                    console.log("  - Source:", searchLoc.source);
+                    
+                    // Validate coordinates
+                    if (typeof searchLoc.lat === 'number' && typeof searchLoc.lon === 'number' &&
+                        !isNaN(searchLoc.lat) && !isNaN(searchLoc.lon)) {
+                        
+                        console.log("✅ COORDINATES ARE VALID - Setting search location state");
+                        
+                        setSearchLocation({
+                            lat: searchLoc.lat,
+                            lon: searchLoc.lon,
+                            name: searchLoc.name
+                        });
+                        
+                        console.log("📍 SEARCH LOCATION STATE SET");
+                        
+                        // Center map on search location
+                        if (mapInstance.current) {
+                            const searchCoords = ol.proj.fromLonLat([searchLoc.lon, searchLoc.lat]);
+                            console.log("🗺️ CENTERING MAP ON SEARCH LOCATION:");
+                            console.log("  - WGS84 coords:", [searchLoc.lon, searchLoc.lat]);
+                            console.log("  - Transformed coords:", searchCoords);
+                            
+                            mapInstance.current.getView().setCenter(searchCoords);
+                            mapInstance.current.getView().setZoom(16);
+                            console.log("✅ MAP CENTERED ON SEARCH LOCATION");
+                        } else {
+                            console.error("❌ MAP INSTANCE NOT AVAILABLE");
+                        }
+                    } else {
+                        console.error("❌ INVALID COORDINATES IN SEARCH LOCATION:");
+                        console.error("  - lat type:", typeof searchLoc.lat, "value:", searchLoc.lat);
+                        console.error("  - lon type:", typeof searchLoc.lon, "value:", searchLoc.lon);
+                    }
+                } else {
+                    console.warn("⚠️ NO SEARCH LOCATION IN BACKEND RESPONSE");
+                    console.log("🔍 Response keys:", Object.keys(data || {}));
+                }
+                
+                // Continue with existing response processing...
                 if (data && typeof data === 'object' && 'response' in data && 'geojson_data' in data) {
                     console.log("✅ Detected combined response format");
                     
@@ -607,68 +734,14 @@ try {
                     const geojsonData = data.geojson_data;
                     
                     if (Array.isArray(geojsonData) && geojsonData.length > 0) {
-                        const firstItem = geojsonData[0];
-                        
-                        if (firstItem && typeof firstItem === 'object' && 
-                            'name' in firstItem && 'lat' in firstItem && 'lon' in firstItem && 
-                            'geometry' in firstItem && firstItem.lat !== 0 && firstItem.lon !== 0) {
-                            
-                            console.log("✓ Valid building data - updating map and components");
-                            
-                            // Extract search location
-                            const responseText = data.response || '';
-                            const coordMatch = responseText.match(/(\d+\.\d+)°N,\s*(\d+\.\d+)°E/);
-                            if (coordMatch) {
-                                const searchLat = parseFloat(coordMatch[1]);
-                                const searchLon = parseFloat(coordMatch[2]);
-                                
-                                setSearchLocation({
-                                    lat: searchLat,
-                                    lon: searchLon,
-                                    name: "Search Location"
-                                });
-                                console.log(`📍 Found search coordinates: ${searchLat}, ${searchLon}`);
-                            } 
-                            else if (geojsonData.some(b => b.properties?.distance_km !== undefined)) {
-                                const buildingsWithDistance = geojsonData.filter(b => b.properties?.distance_km !== undefined);
-                                if (buildingsWithDistance.length > 0) {
-                                    const closestBuilding = buildingsWithDistance[0];
-                                    setSearchLocation({
-                                        lat: closestBuilding.lat,
-                                        lon: closestBuilding.lon,
-                                        name: "Near Search Address"
-                                    });
-                                    console.log(`📍 Using closest building as search center`);
-                                }
-                            }
-                            
-                            console.log("Setting features for legend and statistics:", geojsonData.length);
-                            setFeatures(geojsonData);
-                            updateMapFeatures(geojsonData);
-                            foundBuildings = true;
-                        }
+                        // Process building data...
+                        console.log("Setting features for legend and statistics:", geojsonData.length);
+                        setFeatures(geojsonData);
+                        updateMapFeatures(geojsonData);
+                        foundBuildings = true;
                     }
                 }
                 // Handle other response formats...
-                else if (Array.isArray(data) && data.length > 0) {
-                    const firstItem = data[0];
-                    
-                    if (firstItem && typeof firstItem === 'object' && 
-                        'name' in firstItem && 'lat' in firstItem && 'lon' in firstItem && 
-                        'geometry' in firstItem && firstItem.lat !== 0 && firstItem.lon !== 0) {
-                        
-                        console.log("✓ Legacy building data format - updating map");
-                        setFeatures(data);
-                        updateMapFeatures(data);
-                        foundBuildings = true;
-                        
-                        responseContent = `Found ${data.length} buildings! The legend and location pin should now work correctly.`;
-                    } else if (firstItem && firstItem.error) {
-                        responseContent = `I encountered an issue: ${firstItem.error}`;
-                    } else {
-                        responseContent = Array.isArray(data) ? data.join('\n') : JSON.stringify(data, null, 2);
-                    }
-                }
                 else if (data && data.response) {
                     responseContent = data.response;
                 }
@@ -691,7 +764,7 @@ try {
                 setMessages(prev => [...prev, assistantMessage]);
                 
             } catch (error) {
-                console.error("Query error:", error);
+                console.error("❌ QUERY ERROR:", error);
                 
                 const errorMessage = {
                     type: 'assistant',

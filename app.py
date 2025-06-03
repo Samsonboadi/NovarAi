@@ -404,6 +404,38 @@ def index():
     """Serve the main application page."""
     return render_template('base.html')
 
+
+
+
+def extract_search_coordinates_from_agent_logs(agent):
+    """Extract search coordinates directly from agent execution logs."""
+    try:
+        if hasattr(agent, 'memory') and hasattr(agent.memory, 'steps'):
+            print("🔍 Searching for location coordinates in agent memory...")
+            
+            for step in agent.memory.steps:
+                if hasattr(step, 'tool_calls'):
+                    for tool_call in step.tool_calls:
+                        tool_name = getattr(tool_call, 'tool_name', 'unknown')
+                        
+                        if tool_name == 'search_location_coordinates' and hasattr(tool_call, 'result'):
+                            location_result = tool_call.result
+                            
+                            if (isinstance(location_result, dict) and 
+                                not location_result.get('error') and
+                                'lat' in location_result and 'lon' in location_result):
+                                
+                                return {
+                                    "lat": float(location_result['lat']),
+                                    "lon": float(location_result['lon']),
+                                    "name": location_result.get('name', 'Search Location')
+                                }
+        return None
+    except Exception as e:
+        print(f"❌ Error extracting search coordinates: {e}")
+        return None
+
+        
 @app.route('/api/query', methods=['POST'])
 def query():
     """Handle chat queries using AI INTELLIGENCE for intent detection."""
@@ -531,6 +563,9 @@ def query():
         
         print(f"Result text preview: {result_text[:200]}...")
         
+        # FIXED: Extract search coordinates directly from agent logs
+        search_location = extract_search_coordinates_from_agent_logs(agent)
+        
         # Enhanced JSON detection for AI-generated responses
         try:
             import re
@@ -567,154 +602,60 @@ def query():
                             current_map_state["features"] = processed_features
                             current_map_state["last_updated"] = datetime.now().isoformat()
                             
-                            return jsonify({
+                            # FIXED: Include search location in response
+                            response_data = {
                                 "response": text_description,
                                 "geojson_data": processed_features,
                                 "agent_type": "ai_intelligent_geographic",
                                 "ai_method": "intelligent_analysis",
                                 "tools_used": "ai_intelligence"
-                            })
+                            }
+                            
+                            if search_location:
+                                response_data["search_location"] = search_location
+                                print(f"📍 Including search location: {search_location['name']} at {search_location['lat']}, {search_location['lon']}")
+                            
+                            return jsonify(response_data)
                     
                     # Text-only AI response
                     print("📝 AI query with text-only response")
-                    return jsonify({
+                    response_data = {
                         "response": text_description,
                         "agent_type": "ai_intelligent_text",
                         "ai_method": "intelligent_analysis",
                         "tools_used": "ai_intelligence"
-                    })
+                    }
+                    
+                    if search_location:
+                        response_data["search_location"] = search_location
+                    
+                    return jsonify(response_data)
                     
         except json.JSONDecodeError:
             pass
         except Exception:
             pass
         
-        # Search agent execution logs for AI-generated data
-        building_data = None
-        text_description = None
+        # Continue with existing logic for other response types...
+        # (Keep the rest of the existing function)
         
-        if hasattr(agent, 'logs') or hasattr(agent, 'memory'):
-            print("🔍 Analyzing AI execution for intelligent decisions...")
-            
-            # Check multiple log sources
-            log_sources = []
-            if hasattr(agent, 'memory') and hasattr(agent.memory, 'steps'):
-                log_sources.append(('memory.steps', agent.memory.steps))
-            if hasattr(agent, 'logs'):
-                log_sources.append(('logs', agent.logs))
-            
-            for source_name, log_entries in log_sources:
-                print(f"   📚 Checking {source_name} ({len(log_entries)} entries)...")
-                
-                for log_index, log_entry in enumerate(reversed(log_entries)):
-                    # Check for tool call results
-                    tool_calls_to_check = []
-                    
-                    if hasattr(log_entry, 'tool_calls'):
-                        tool_calls_to_check.extend(log_entry.tool_calls)
-                    
-                    if hasattr(log_entry, 'step_logs'):
-                        for step_log in log_entry.step_logs:
-                            if hasattr(step_log, 'tool_calls'):
-                                tool_calls_to_check.extend(step_log.tool_calls)
-                    
-                    if hasattr(log_entry, 'action'):
-                        if hasattr(log_entry.action, 'tool_calls'):
-                            tool_calls_to_check.extend(log_entry.action.tool_calls)
-                        elif hasattr(log_entry.action, 'result'):
-                            result_data = log_entry.action.result
-                            if isinstance(result_data, dict):
-                                if 'text_description' in result_data and 'geojson_data' in result_data:
-                                    text_description = result_data['text_description']
-                                    building_data = result_data['geojson_data']
-                                    print(f"🧠 Found AI intelligent response in action.result")
-                                    break
-                    
-                    # Check individual tool call results from AI analysis
-                    for tool_call in tool_calls_to_check:
-                        if hasattr(tool_call, 'result'):
-                            tool_result = tool_call.result
-                            
-                            # Look for structured response
-                            if (isinstance(tool_result, dict) and 
-                                'text_description' in tool_result and 
-                                'geojson_data' in tool_result):
-                                
-                                text_description = tool_result['text_description']
-                                building_data = tool_result['geojson_data']
-                                tool_name = getattr(tool_call, 'tool_name', 'unknown')
-                                print(f"🎯 Found AI intelligent response from tool: {tool_name}")
-                                break
-                            
-                            # Look for features from AI analysis
-                            elif (isinstance(tool_result, dict) and 'features' in tool_result):
-                                features_list = tool_result['features']
-                                if isinstance(features_list, list) and len(features_list) > 0:
-                                    first_item = features_list[0]
-                                    if (isinstance(first_item, dict) and
-                                        'geometry' in first_item and 'lat' in first_item and 
-                                        'lon' in first_item and first_item.get('lat', 0) != 0):
-                                        
-                                        building_data = features_list
-                                        tool_name = getattr(tool_call, 'tool_name', 'ai_tool')
-                                        text_description = f"AI intelligent analysis found {len(building_data)} features using {tool_name}"
-                                        print(f"🗺️ Found AI intelligent feature list from: {tool_name}")
-                                        break
-                    
-                    if building_data and text_description:
-                        break
-                
-                if building_data and text_description:
-                    break
-        
-        # Process AI-generated geographic data
-        if building_data and text_description:
-            print(f"🗺️ Processing AI intelligent geographic response")
-            
-            if isinstance(building_data, list):
-                serialized_buildings = []
-                for building in building_data:
-                    try:
-                        if isinstance(building, dict):
-                            serialized_building = ensure_json_serializable(building)
-                            
-                            if 'geometry' in serialized_building:
-                                validated_geom = validate_and_fix_geometry(serialized_building['geometry'])
-                                if validated_geom:
-                                    serialized_building['geometry'] = validated_geom
-                                    
-                                    lat = serialized_building.get('lat', 0)
-                                    lon = serialized_building.get('lon', 0)
-                                    
-                                    if lat != 0 and lon != 0:
-                                        serialized_buildings.append(serialized_building)
-                                        
-                    except Exception as e:
-                        print(f"❌ Error processing AI intelligent feature: {e}")
-                        continue
-                
-                if serialized_buildings:
-                    print(f"✅ Returning AI intelligent response: text + {len(serialized_buildings)} features")
-                    
-                    current_map_state["features"] = serialized_buildings
-                    current_map_state["last_updated"] = datetime.now().isoformat()
-                    
-                    return jsonify({
-                        "response": text_description,
-                        "geojson_data": serialized_buildings,
-                        "agent_type": "ai_intelligent_geographic_processed",
-                        "ai_method": "intelligent_analysis",
-                        "tools_used": "ai_intelligence"
-                    })
+        # FALLBACK: Always include search location if found
+        if search_location:
+            print(f"📍 Adding search location to fallback response: {search_location['name']}")
         
         # Handle pure text responses from AI intelligence
         print(f"💬 Returning AI intelligent text response")
-        return jsonify({
+        response_data = {
             "response": str(result_text),
             "agent_type": "ai_intelligent_text",
             "ai_method": "intelligent_analysis",
             "tools_used": "ai_intelligence"
-        })
+        }
+        
+        if search_location:
+            response_data["search_location"] = search_location
+        
+        return jsonify(response_data)
         
     except Exception as e:
         error_msg = f"AI intelligence error: {str(e)}"
@@ -728,6 +669,9 @@ def query():
     finally:
         print("🎉 AI INTELLIGENCE QUERY COMPLETED")
         print("="*80 + "\n")
+
+
+        
 
 @app.route('/api/map-state', methods=['GET'])
 def get_map_state():
