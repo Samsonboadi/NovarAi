@@ -692,7 +692,7 @@ try {
             setQuery('');
 
             try {
-                console.log("🚀 ENHANCED: Sending query to FIXED backend:", currentQuery);
+                console.log("🚀 FIXED: Sending query to backend:", currentQuery);
                 
                 const res = await fetch('/api/query', {
                     method: 'POST',
@@ -706,23 +706,22 @@ try {
                 });
                 
                 const data = await res.json();
-                console.log("📦 ENHANCED: FULL RESPONSE FROM FIXED BACKEND:", data);
+                console.log("📦 FIXED: COMPLETE RESPONSE FROM BACKEND:", data);
                 
-                // ENHANCED: Process search location from backend response
+                // Process search location from backend response
                 if (data && data.search_location) {
                     const searchLoc = data.search_location;
-                    console.log("🎯 ENHANCED: PROCESSING SEARCH LOCATION FROM FIXED BACKEND:");
+                    console.log("🎯 FIXED: PROCESSING SEARCH LOCATION:");
                     console.log("  - Name:", searchLoc.name);
                     console.log("  - Latitude:", searchLoc.lat);
                     console.log("  - Longitude:", searchLoc.lon);
-                    console.log("  - Source:", searchLoc.source);
                     
                     // Validate coordinates before setting state
                     if (typeof searchLoc.lat === 'number' && typeof searchLoc.lon === 'number' &&
                         !isNaN(searchLoc.lat) && !isNaN(searchLoc.lon) &&
                         isFinite(searchLoc.lat) && isFinite(searchLoc.lon)) {
                         
-                        console.log("✅ ENHANCED: COORDINATES ARE VALID - Setting search location state");
+                        console.log("✅ FIXED: COORDINATES ARE VALID - Setting search location state");
                         
                         setSearchLocation({
                             lat: searchLoc.lat,
@@ -731,72 +730,148 @@ try {
                             source: searchLoc.source || 'backend'
                         });
                         
-                        console.log("📍 ENHANCED: SEARCH LOCATION STATE SET SUCCESSFULLY");
+                        console.log("📍 FIXED: SEARCH LOCATION STATE SET SUCCESSFULLY");
                         
                     } else {
-                        console.error("❌ ENHANCED: INVALID COORDINATES IN SEARCH LOCATION:");
-                        console.error("  - lat:", searchLoc.lat, "type:", typeof searchLoc.lat, "isNaN:", isNaN(searchLoc.lat));
-                        console.error("  - lon:", searchLoc.lon, "type:", typeof searchLoc.lon, "isNaN:", isNaN(searchLoc.lon));
+                        console.error("❌ FIXED: INVALID COORDINATES IN SEARCH LOCATION:");
+                        console.error("  - lat:", searchLoc.lat, "type:", typeof searchLoc.lat);
+                        console.error("  - lon:", searchLoc.lon, "type:", typeof searchLoc.lon);
                     }
                 } else {
-                    console.warn("⚠️ ENHANCED: NO SEARCH LOCATION IN BACKEND RESPONSE");
-                    console.log("🔍 Response keys:", Object.keys(data || {}));
+                    console.warn("⚠️ FIXED: NO SEARCH LOCATION IN BACKEND RESPONSE");
                 }
                 
                 let responseContent = '';
                 let foundBuildings = false;
                 
-                // ENHANCED: Process different response formats
-                if (data && typeof data === 'object' && 'response' in data && 'geojson_data' in data) {
-                    console.log("✅ ENHANCED: Detected combined response format");
+                // FIXED: Enhanced response processing with better validation
+                if (data && typeof data === 'object') {
+                    console.log("🔍 FIXED: Analyzing response structure...");
+                    console.log("Response keys:", Object.keys(data));
+                    console.log("Has response field:", 'response' in data);
+                    console.log("Has geojson_data field:", 'geojson_data' in data);
                     
-                    responseContent = data.response;
-                    const geojsonData = data.geojson_data;
-                    
-                    if (Array.isArray(geojsonData) && geojsonData.length > 0) {
-                        console.log("🗺️ ENHANCED: Processing building data for map display:", geojsonData.length);
+                    // Check for structured response with geojson_data
+                    if ('response' in data && 'geojson_data' in data) {
+                        console.log("✅ FIXED: Detected structured response format");
                         
-                        // Validate features before setting
-                        const validFeatures = geojsonData.filter(feature => {
-                            return feature && 
-                                   typeof feature === 'object' && 
-                                   typeof feature.lat === 'number' && 
-                                   typeof feature.lon === 'number' &&
-                                   !isNaN(feature.lat) && !isNaN(feature.lon) &&
-                                   feature.lat !== 0 && feature.lon !== 0;
-                        });
+                        responseContent = data.response;
+                        const geojsonData = data.geojson_data;
                         
-                        console.log("✅ ENHANCED: Valid features after filtering:", validFeatures.length);
+                        console.log("📝 Response content:", responseContent);
+                        console.log("🗺️ GeoJSON data type:", typeof geojsonData);
+                        console.log("🗺️ GeoJSON data length:", Array.isArray(geojsonData) ? geojsonData.length : 'Not an array');
                         
-                        if (validFeatures.length > 0) {
-                            setFeatures(validFeatures);
-                            updateMapFeatures(validFeatures);
-                            foundBuildings = true;
+                        if (Array.isArray(geojsonData) && geojsonData.length > 0) {
+                            console.log("🎯 FIXED: Processing building data for map display");
+                            console.log("📊 Raw features received:", geojsonData.length);
                             
-                            console.log("📊 ENHANCED: Features set for legend and statistics:", validFeatures.length);
+                            // Enhanced feature validation
+                            const validFeatures = geojsonData.filter((feature, index) => {
+                                const isValid = feature && 
+                                            typeof feature === 'object' && 
+                                            typeof feature.lat === 'number' && 
+                                            typeof feature.lon === 'number' &&
+                                            !isNaN(feature.lat) && !isNaN(feature.lon) &&
+                                            feature.lat !== 0 && feature.lon !== 0 &&
+                                            isFinite(feature.lat) && isFinite(feature.lon);
+                                
+                                if (!isValid) {
+                                    console.warn(`⚠️ Invalid feature ${index + 1}:`, {
+                                        hasFeature: !!feature,
+                                        lat: feature?.lat,
+                                        lon: feature?.lon,
+                                        latType: typeof feature?.lat,
+                                        lonType: typeof feature?.lon
+                                    });
+                                }
+                                
+                                return isValid;
+                            });
+                            
+                            console.log("✅ FIXED: Valid features after filtering:", validFeatures.length);
+                            
+                            if (validFeatures.length > 0) {
+                                // Additional validation for geometry and properties
+                                const processedFeatures = validFeatures.map((feature, index) => {
+                                    const processed = { ...feature };
+                                    
+                                    // Ensure geometry exists
+                                    if (!processed.geometry || typeof processed.geometry !== 'object') {
+                                        console.log(`🔧 Adding missing geometry for feature ${index + 1}`);
+                                        processed.geometry = {
+                                            type: 'Point',
+                                            coordinates: [processed.lon, processed.lat]
+                                        };
+                                    }
+                                    
+                                    // Ensure properties exist
+                                    if (!processed.properties || typeof processed.properties !== 'object') {
+                                        processed.properties = {};
+                                    }
+                                    
+                                    // Ensure required fields
+                                    if (!processed.name) {
+                                        processed.name = `Feature ${index + 1}`;
+                                    }
+                                    if (!processed.description) {
+                                        processed.description = 'PDOK Feature';
+                                    }
+                                    
+                                    return processed;
+                                });
+                                
+                                console.log("🎉 FIXED: Successfully processed features:", processedFeatures.length);
+                                
+                                // Update features state
+                                setFeatures(processedFeatures);
+                                updateMapFeatures(processedFeatures);
+                                foundBuildings = true;
+                                
+                                // Log first few features for debugging
+                                processedFeatures.slice(0, 3).forEach((feature, index) => {
+                                    console.log(`📍 Feature ${index + 1}:`, {
+                                        name: feature.name,
+                                        lat: feature.lat,
+                                        lon: feature.lon,
+                                        hasGeometry: !!feature.geometry,
+                                        geometryType: feature.geometry?.type
+                                    });
+                                });
+                                
+                            } else {
+                                console.warn("❌ FIXED: No valid features after validation");
+                                responseContent += "\n\n⚠️ Note: Found data but no valid features for map display.";
+                            }
                         } else {
-                            console.warn("⚠️ ENHANCED: No valid features after validation");
+                            console.log("📝 FIXED: Response has no geojson_data or empty array");
+                            if (geojsonData && !Array.isArray(geojsonData)) {
+                                console.warn("⚠️ geojson_data is not an array:", typeof geojsonData);
+                            }
                         }
-                    } else {
-                        console.log("📝 ENHANCED: Response has no geojson_data or empty array");
                     }
-                }
-                // Handle other response formats
-                else if (data && data.response) {
-                    responseContent = data.response;
-                    console.log("📝 ENHANCED: Text-only response");
-                }
-                else if (data && data.error) {
-                    responseContent = `I encountered an issue: ${data.error}`;
-                    console.error("❌ ENHANCED: Backend returned error:", data.error);
+                    // Handle other response formats
+                    else if (data.response) {
+                        responseContent = data.response;
+                        console.log("📝 FIXED: Text-only response");
+                    }
+                    else if (data.error) {
+                        responseContent = `I encountered an issue: ${data.error}`;
+                        console.error("❌ FIXED: Backend returned error:", data.error);
+                    }
+                    else {
+                        // Try to extract any useful content
+                        responseContent = JSON.stringify(data, null, 2);
+                        console.log("📝 FIXED: Fallback to JSON stringification");
+                    }
                 }
                 else if (typeof data === 'string') {
                     responseContent = data;
-                    console.log("📝 ENHANCED: String response");
+                    console.log("📝 FIXED: String response");
                 }
                 else {
                     responseContent = JSON.stringify(data, null, 2);
-                    console.log("📝 ENHANCED: JSON response (fallback)");
+                    console.log("📝 FIXED: JSON response (fallback)");
                 }
                 
                 const assistantMessage = {
@@ -807,19 +882,20 @@ try {
                 
                 setMessages(prev => [...prev, assistantMessage]);
                 
-                // ENHANCED: Provide feedback about what was processed
+                // FIXED: Provide detailed feedback about what was processed
                 if (foundBuildings) {
-                    console.log("🎉 ENHANCED: Successfully processed geographic response with buildings");
+                    console.log("🎉 FIXED: Successfully processed geographic response with buildings");
+                    console.log(`🗺️ Total features displayed on map: ${features.length}`);
                 } else {
-                    console.log("💬 ENHANCED: Processed text-only response");
+                    console.log("💬 FIXED: Processed text-only response (no geographic data)");
                 }
                 
             } catch (error) {
-                console.error("❌ ENHANCED QUERY ERROR:", error);
+                console.error("❌ FIXED QUERY ERROR:", error);
                 
                 const errorMessage = {
                     type: 'assistant',
-                    content: `Sorry, I encountered an error: ${error.message}`,
+                    content: `Sorry, I encountered an error processing your request: ${error.message}`,
                     timestamp: new Date()
                 };
                 setMessages(prev => [...prev, errorMessage]);

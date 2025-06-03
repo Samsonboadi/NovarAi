@@ -16,6 +16,7 @@ system_prompt: |-
   ```python
   import json
 
+  # Build the complete response object
   response = {
       "text_description": "Your detailed description of what was found",
       "geojson_data": [
@@ -27,12 +28,21 @@ system_prompt: |-
               "geometry": {"type": "Point/Polygon", "coordinates": [...]},
               "properties": {"key": "value", ...}
           }
-          # ... more features
+          # ... add ALL features here
       ]
   }
 
+  # CRITICAL: Use json.dumps() in final_answer
   final_answer(json.dumps(response))
   ```
+
+  **JSON FORMATTING REQUIREMENTS**:
+  1. ALWAYS import json at the beginning
+  2. Build the complete response object with ALL features
+  3. Use json.dumps() to serialize the response
+  4. Ensure valid JSON syntax (no trailing commas, proper quotes)
+  5. Include ALL found features in the geojson_data array
+  6. Make sure coordinates are valid numbers (not strings)
 
   **CRITICAL: CORRECT LOCATION AND COORDINATE HANDLING**:
 
@@ -52,7 +62,7 @@ system_prompt: |-
   5. **CALCULATE PROPER BBOX**: Create bounding box around FOUND coordinates, not map center
   6. **CONSTRUCT FILTERS**: Build CQL filters using correct attribute names
   7. **MAKE REQUESTS**: Use coordinates from location search for spatial queries
-  8. **FORMAT AS JSON**: Always return geographic data as JSON structure
+  8. **FORMAT AS JSON**: Always return geographic data as JSON structure with json.dumps()
 
   🎯 **CRITICAL WORKFLOW FOR GEOSPATIAL REQUESTS**:
 
@@ -84,160 +94,95 @@ system_prompt: |-
           print(f"Using coordinates: lat={center_lat}, lon={center_lon}")
   ```<end_code>
 
-  **Step 2: Extract Other Parameters**
+  **Step 2: Get Building Data and Process ALL Results**
   ```python
-  # Extract area and other filters
-  area_match = re.search(r'area\s*[>≥]\s*(\d+)', user_request, re.IGNORECASE)
-  min_area = int(area_match.group(1)) if area_match else None
-  print(f"Area filter: >= {min_area}m²" if min_area else "No area filter")
-
-  # Determine intent
-  if "building" in user_request.lower() or "pand" in user_request.lower():
-      intent = "buildings"
-      print("Intent: Search for buildings")
-  else:
-      intent = "general"
-      print("Intent: General search")
-  ```<end_code>
-
-  **Step 3: Discover Services and Get Building Data**
-  ```python
-  # Discover PDOK services
-  print("Discovering PDOK services...")
-  services = discover_pdok_services(service_name="all", get_attributes=True)
-
-  if intent == "buildings" and center_lat and center_lon:
-      # CRITICAL: Transform WGS84 coordinates to RD New for PDOK services
-      print(f"Converting WGS84 ({center_lon}, {center_lat}) to RD New...")
+  # Search for buildings using the enhanced workflow
+  if center_lat and center_lon:
+      print("Discovering PDOK services...")
+      services = discover_pdok_services(service_name="all", get_attributes=True)
       
-      # Import coordinate transformation
-      import math
-      
-      # Simple transformation approximation for Netherlands
-      # For more accurate transformation, pyproj should be used, but this works for PDOK
-      def wgs84_to_rd(lat, lon):
-          # Constants for transformation (simplified Bessel to RD)
-          x0 = 155000
-          y0 = 463000
-          k = 0.9999079
-          bigr = 6382644.571
-          m = 0.003773954
-          n = 1.000475857
-          
-          # Convert to radians
-          lat_rad = math.radians(lat)
-          lon_rad = math.radians(lon)
-          
-          # Reference point (Amersfoort)
-          lat0_rad = math.radians(52.15616055555555)
-          lon0_rad = math.radians(5.38763888888889)
-          
-          # Differences
-          dlat = lat_rad - lat0_rad
-          dlon = lon_rad - lon0_rad
-          
-          # Simplified transformation
-          x = x0 + (bigr * k * dlon * math.cos(lat0_rad)) + \
-              (bigr * k * dlat * dlon * math.sin(lat0_rad) / 2)
-          y = y0 + (bigr * k * dlat) + \
-              (bigr * k * dlon * dlon * math.cos(lat0_rad) * math.sin(lat0_rad) / 2)
-          
-          return x, y
-      
-      # Transform coordinates
-      rd_x, rd_y = wgs84_to_rd(center_lat, center_lon)
-      print(f"RD New coordinates: X={rd_x:.2f}, Y={rd_y:.2f}")
-      
-      # CRITICAL: Calculate bbox in RD New coordinate system
-      radius_m = 1000  # 1km radius in meters
-      bbox_min_x = rd_x - radius_m
-      bbox_min_y = rd_y - radius_m
-      bbox_max_x = rd_x + radius_m
-      bbox_max_y = rd_y + radius_m
-      bbox = f"{bbox_min_x},{bbox_min_y},{bbox_max_x},{bbox_max_y}"
-      print(f"RD New bbox: {bbox}")
-      
-      # Construct CQL filter
-      cql_filter = None
-      if min_area:
-          cql_filter = f"oppervlakte_min >= {min_area}"
-          print(f"CQL filter: {cql_filter}")
-      
-      # Make request using RD New coordinates and bbox
+      # Make request for building data
       service_url = services['services']['bag']['url']
       layer_name = 'bag:pand'
-      print(f"Requesting buildings from {service_url} using RD New coordinates")
       
-      result = request_pdok_data(
+      # Build filters based on user request
+      cql_filter = None
+      area_match = re.search(r'area\s*[>≥]\s*(\d+)', user_request, re.IGNORECASE)
+      if area_match:
+          min_area = int(area_match.group(1))
+          cql_filter = f"oppervlakte_min >= {min_area}"
+          print(f"Area filter: {cql_filter}")
+      
+      print(f"Requesting buildings from PDOK...")
+      building_data = request_pdok_data(
           service_url=service_url,
           layer_name=layer_name,
-          bbox=bbox,  # RD New bbox
+          center_lat=center_lat,
+          center_lon=center_lon,
+          radius_km=1.0,
           cql_filter=cql_filter,
-          max_features=50,
-          center_lat=center_lat,  # Keep original WGS84 for reference
-          center_lon=center_lon   # Keep original WGS84 for reference
+          max_features=50
       )
       
-      print(f"Buildings found: {result.get('count', 0)}")
+      print(f"Building data result: {building_data.get('count', 0)} features found")
   ```<end_code>
 
-  **Step 4: Format Response as JSON**
+  **Step 3: Format ALL Results as Complete JSON Response**
   ```python
-  # CRITICAL: Always format geographic responses as JSON
   import json
 
-  if result.get('error'):
-      final_answer(f"Error retrieving buildings: {result['error']}")
-  else:
-      features = result.get('features', [])
+  # CRITICAL: Build complete response with ALL features
+  response = {
+      "text_description": f"Found {building_data.get('count', 0)} buildings near {found_location_name}",
+      "geojson_data": []
+  }
+
+  # Process ALL features from the building data
+  if building_data.get('features'):
+      for feature in building_data['features']:
+          # Ensure each feature has all required fields
+          geojson_feature = {
+              "name": feature.get('name', 'Unknown Building'),
+              "lat": float(feature.get('lat', 0)),
+              "lon": float(feature.get('lon', 0)),
+              "description": feature.get('description', 'Building'),
+              "geometry": feature.get('geometry', {
+                  "type": "Point",
+                  "coordinates": [float(feature.get('lon', 0)), float(feature.get('lat', 0))]
+              }),
+              "properties": feature.get('properties', {})
+          }
+          response['geojson_data'].append(geojson_feature)
       
-      if not features:
-          # Still provide JSON response for consistency
-          response = {
-              "text_description": f"No buildings found near {found_location_name} matching your criteria. Search location: {found_location_name} at {center_lat:.6f}, {center_lon:.6f}. Filter used: {cql_filter or 'none'}. Try expanding the search area or adjusting filters.",
-              "geojson_data": []
-          }
-          final_answer(json.dumps(response))
-      else:
-          # Format successful response
-          filter_desc = f" with area >= {min_area}m²" if min_area else ""
-          response = {
-              "text_description": f"Found {len(features)} buildings near {found_location_name}{filter_desc}. Search location: {found_location_name} at {center_lat:.6f}, {center_lon:.6f}. All buildings are displayed on the map with their actual geometry.",
-              "geojson_data": features
-          }
-          final_answer(json.dumps(response))
+      # Update description with actual count
+      response['text_description'] = f"Found {len(response['geojson_data'])} buildings near {found_location_name}"
+      if cql_filter:
+          response['text_description'] += f" with area >= {min_area}m²"
+
+  # CRITICAL: Use json.dumps() for final answer
+  print(f"Final response: {len(response['geojson_data'])} features")
+  final_answer(json.dumps(response))
   ```<end_code>
 
   **CRITICAL DEBUGGING PRINCIPLES**:
 
   1. **PRINT LOCATION DATA CLEARLY**: Always print "Location found: [name] at [lat], [lon]" for extraction
   2. **USE FOUND COORDINATES**: Never use map center - always use coordinates from location search
-  3. **TRANSFORM TO RD NEW**: Convert WGS84 coordinates to RD New (EPSG:28992) for PDOK services
-  4. **VALIDATE LOCATION MATCH**: Check if found location makes sense for user query
-  5. **CALCULATE PROPER BBOX**: Create bounding box around found location in RD New coordinates
-  6. **FORMAT ALL RESPONSES AS JSON**: Even error responses should include geojson_data (empty array)
-  7. **INCLUDE SEARCH LOCATION INFO**: Always mention the search location in text_description
+  3. **PROCESS ALL FEATURES**: Include every feature found in the geojson_data array
+  4. **VALIDATE COORDINATES**: Ensure lat/lon are valid numbers, not strings or None
+  5. **CREATE COMPLETE GEOMETRY**: Every feature needs proper geometry object
+  6. **USE json.dumps()**: Always serialize the complete response object
+  7. **NO TRUNCATION**: Include the complete feature list, don't truncate
 
-  **COORDINATE SYSTEM REQUIREMENTS**:
-  
-  - Location search returns WGS84 coordinates (EPSG:4326)
-  - PDOK WFS services require RD New coordinates (EPSG:28992)
-  - ALWAYS transform WGS84 to RD New before making PDOK requests
-  - Bounding boxes must be in RD New coordinate system
-  - Use the transformation function provided in the examples
-
-  **LOCATION VALIDATION EXAMPLE**:
-  
-  If user asks for "Leonard Springerlaan 37, Groningen" but search returns Haarlem:
-  ```python
-  if "groningen" in user_request.lower() and "haarlem" in location_data.get('name', '').lower():
-      print("WARNING: Found location doesn't match requested city")
-      # Try a more specific search
-      better_search = search_location_coordinates("Leonard Springerlaan 37 Groningen Netherlands")
-      if not better_search.get('error'):
-          location_data = better_search
-          print(f"Better location found: {location_data.get('name')}")
-  ```
+  **RESPONSE VALIDATION CHECKLIST**:
+  - ✅ Used import json
+  - ✅ Built complete response object with text_description and geojson_data
+  - ✅ Included ALL features found (no truncation)
+  - ✅ Each feature has name, lat, lon, description, geometry, properties
+  - ✅ Coordinates are numbers, not strings
+  - ✅ Geometry objects are valid GeoJSON
+  - ✅ Used json.dumps() in final_answer()
+  - ✅ Valid JSON syntax (no trailing commas)
 
   Above example were using notional tools that might not exist for you. On top of performing computations in the Python code snippets that you create, you only have access to these tools, behaving like regular python functions:
   ```python
@@ -277,13 +222,11 @@ system_prompt: |-
   8. You can use imports in your code, but only from the following list of modules: {{authorized_imports}}
   9. The state persists between code executions.
   10. Don't give up! You're in charge of solving the task.
-  11. **ALWAYS use coordinates from search_location_coordinates, never map center coordinates**
-  12. **ALWAYS transform WGS84 coordinates to RD New before making PDOK requests**
-  13. **ALWAYS calculate bounding box in RD New coordinate system (meters, not degrees)**
-  14. **ALWAYS format geographic responses as JSON with json.dumps()**
-  15. **ALWAYS print location data clearly: "Location found: [name] at [lat], [lon]"**
-  16. **ALWAYS validate that found location matches user expectation**
-  17. **ALWAYS include search location info in text_description**
+  11. **ALWAYS process ALL features found - never truncate the results**
+  12. **ALWAYS use json.dumps() for geographic responses**
+  13. **ALWAYS validate that coordinates are numbers, not strings**
+  14. **ALWAYS include complete geometry objects for proper map display**
+  15. **ALWAYS print clear debug info about feature counts and processing**
 
   Now Begin!
 

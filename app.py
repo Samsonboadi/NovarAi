@@ -676,97 +676,222 @@ def extract_search_coordinates_from_agent_logs(agent):
         return None
 
 def extract_and_parse_json_response(result_text):
-    """FIXED: Enhanced JSON extraction that handles AI-generated responses properly."""
+    """FIXED: Complete JSON extraction that handles truncated responses."""
     try:
-        print("🔍 FIXED: Enhanced JSON parsing from AI response...")
-        print(f"📝 Response text preview: {result_text[:300]}...")
+        print("🔍 COMPLETE FIX: Enhanced JSON parsing from AI response...")
+        print(f"📝 Response text length: {len(result_text)}")
         
-        # Method 1: Look for complete JSON objects with text_description and geojson_data
-        json_pattern = r'\{[^{}]*"text_description"[^{}]*"geojson_data"[^{}]*\}'
+        # Method 1: Look for complete final_answer JSON in the last part of the response
+        final_answer_patterns = [
+            r'final_answer\(json\.dumps\(([^)]+)\)\)',  # final_answer(json.dumps(...))
+            r'final_answer\(([^)]+)\)',                 # final_answer(...)
+            r'Out - Final answer:\s*(.+?)(?:\n|$)',     # Out - Final answer: ...
+        ]
+        
+        for pattern in final_answer_patterns:
+            matches = re.findall(pattern, result_text, re.DOTALL)
+            for match in matches:
+                try:
+                    print(f"🎯 Testing pattern match: {match[:100]}...")
+                    
+                    # Clean the match
+                    cleaned = match.strip()
+                    
+                    # Handle different quote styles and escaping
+                    if cleaned.startswith('"') and cleaned.endswith('"'):
+                        cleaned = cleaned[1:-1]
+                    elif cleaned.startswith("'") and cleaned.endswith("'"):
+                        cleaned = cleaned[1:-1]
+                    
+                    # Unescape if needed
+                    if '\\u' in cleaned or '\\"' in cleaned:
+                        import codecs
+                        try:
+                            cleaned = codecs.decode(cleaned, 'unicode_escape')
+                        except:
+                            # Try manual unescaping
+                            cleaned = cleaned.replace('\\"', '"').replace('\\n', '\n').replace('\\t', '\t')
+                    
+                    # Try to parse
+                    if cleaned.strip().startswith('{') and 'geojson_data' in cleaned:
+                        parsed = json.loads(cleaned)
+                        if (isinstance(parsed, dict) and 
+                            'text_description' in parsed and 
+                            'geojson_data' in parsed):
+                            print("✅ COMPLETE FIX: Found valid JSON response!")
+                            return parsed, True
+                            
+                except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                    print(f"⚠️ Parse error: {e}")
+                    continue
+        
+        # Method 2: Reconstruct from truncated response
+        if '"text_description":' in result_text and '"geojson_data":' in result_text:
+            print("🔧 COMPLETE FIX: Attempting to reconstruct truncated JSON...")
+            
+            try:
+                # Extract text description
+                text_desc_pattern = r'"text_description":\s*"([^"]*)"'
+                text_match = re.search(text_desc_pattern, result_text)
+                text_description = text_match.group(1) if text_match else "Buildings found"
+                
+                # Find the geojson_data section
+                geojson_start = result_text.find('"geojson_data": [')
+                if geojson_start != -1:
+                    # Extract everything after geojson_data start
+                    geojson_section = result_text[geojson_start + 16:]  # Skip '"geojson_data": ['
+                    
+                    # Find individual feature objects
+                    features = []
+                    brace_count = 0
+                    current_feature = ""
+                    in_string = False
+                    escape_next = False
+                    
+                    for char in geojson_section:
+                        if escape_next:
+                            current_feature += char
+                            escape_next = False
+                            continue
+                            
+                        if char == '\\':
+                            escape_next = True
+                            current_feature += char
+                            continue
+                            
+                        if char == '"' and not escape_next:
+                            in_string = not in_string
+                            
+                        if not in_string:
+                            if char == '{':
+                                if brace_count == 0:
+                                    current_feature = "{"
+                                else:
+                                    current_feature += char
+                                brace_count += 1
+                            elif char == '}':
+                                current_feature += char
+                                brace_count -= 1
+                                if brace_count == 0:
+                                    # Complete feature found
+                                    try:
+                                        feature = json.loads(current_feature)
+                                        if (isinstance(feature, dict) and 
+                                            'name' in feature and 'lat' in feature and 'lon' in feature):
+                                            features.append(feature)
+                                    except json.JSONDecodeError:
+                                        pass
+                                    current_feature = ""
+                            elif brace_count > 0:
+                                current_feature += char
+                        else:
+                            if brace_count > 0:
+                                current_feature += char
+                    
+                    if features:
+                        reconstructed = {
+                            "text_description": text_description,
+                            "geojson_data": features
+                        }
+                        print(f"✅ COMPLETE FIX: Reconstructed JSON with {len(features)} features!")
+                        return reconstructed, True
+                        
+            except Exception as e:
+                print(f"⚠️ Reconstruction error: {e}")
+        
+        # Method 3: Extract from agent memory if available
+        print("🔍 COMPLETE FIX: Checking for response in context...")
+        
+        # Look for any JSON-like structures
+        json_pattern = r'\{[^{}]*"text_description"[^{}]*\}'
         json_matches = re.findall(json_pattern, result_text, re.DOTALL)
         
         for json_str in json_matches:
             try:
-                # Clean up the JSON string
-                cleaned_json = json_str.strip()
-                parsed_response = json.loads(cleaned_json)
-                
-                if (isinstance(parsed_response, dict) and 
-                    'text_description' in parsed_response and 
-                    'geojson_data' in parsed_response):
-                    
-                    print("✅ FOUND structured JSON response (Method 1)")
-                    return parsed_response, True
-                    
-            except json.JSONDecodeError as e:
-                print(f"⚠️ JSON decode error in Method 1: {e}")
-                continue
-        
-        # Method 2: Look for json.dumps() output patterns
-        dumps_pattern = r'json\.dumps\(([^)]+)\)'
-        dumps_matches = re.findall(dumps_pattern, result_text, re.DOTALL)
-        
-        for match in dumps_matches:
-            try:
-                # Try to evaluate the expression safely
-                if 'text_description' in match and 'geojson_data' in match:
-                    # Look for the actual JSON that would be output
-                    json_output_pattern = r'\{[^{}]*?"text_description"[^{}]*?"geojson_data"[^{}]*?\}'
-                    json_output = re.search(json_output_pattern, result_text, re.DOTALL)
-                    if json_output:
-                        parsed_response = json.loads(json_output.group(0))
-                        print("✅ FOUND JSON from dumps pattern (Method 2)")
-                        return parsed_response, True
-            except:
-                continue
-        
-        # Method 3: Look for final_answer tool calls with JSON
-        final_answer_pattern = r'final_answer\(([^)]+)\)'
-        final_matches = re.findall(final_answer_pattern, result_text, re.DOTALL)
-        
-        for match in final_matches:
-            try:
-                # Clean up the match and try to parse
-                cleaned_match = match.strip().strip('"\'')
-                if cleaned_match.startswith('{') and 'text_description' in cleaned_match:
-                    parsed_response = json.loads(cleaned_match)
-                    if (isinstance(parsed_response, dict) and 
-                        'text_description' in parsed_response and 
-                        'geojson_data' in parsed_response):
-                        print("✅ FOUND JSON from final_answer (Method 3)")
-                        return parsed_response, True
-            except:
-                continue
-        
-        # Method 4: Look for any valid JSON with required fields
-        all_json_pattern = r'\{[^{}]*\}'
-        all_matches = re.findall(all_json_pattern, result_text, re.DOTALL)
-        
-        for json_str in all_matches:
-            try:
                 parsed = json.loads(json_str)
                 if (isinstance(parsed, dict) and 
-                    'text_description' in parsed and 
-                    'geojson_data' in parsed):
-                    print("✅ FOUND JSON with required fields (Method 4)")
+                    'text_description' in parsed):
+                    # Add empty geojson_data if missing
+                    if 'geojson_data' not in parsed:
+                        parsed['geojson_data'] = []
+                    print("✅ COMPLETE FIX: Found basic JSON structure!")
                     return parsed, True
-            except:
+            except json.JSONDecodeError:
                 continue
         
-        print("❌ No valid structured JSON found in response")
+        print("❌ COMPLETE FIX: No valid JSON found - response may be incomplete")
         return None, False
         
     except Exception as e:
-        print(f"❌ Error in enhanced JSON parsing: {e}")
+        print(f"❌ COMPLETE FIX: Error in JSON parsing: {e}")
         return None, False
 
+
+
+
+def process_agent_result_completely(agent_result, agent):
+    """Process agent result with better handling of long responses."""
+    try:
+        print("🔄 COMPLETE FIX: Processing agent result...")
+        
+        # Get the complete result text
+        if hasattr(agent_result, 'content'):
+            result_text = agent_result.content
+        elif hasattr(agent_result, 'text'):  
+            result_text = agent_result.text
+        elif isinstance(agent_result, str):
+            result_text = agent_result
+        else:
+            result_text = str(agent_result)
+        
+        print(f"📊 Result length: {len(result_text)} characters")
+        
+        # Check if response appears truncated
+        is_truncated = (
+            result_text.endswith('...') or 
+            result_text.count('{') != result_text.count('}') or
+            ('"geojson_data":' in result_text and not result_text.strip().endswith('}')) or
+            ('final_answer(' in result_text and result_text.count('final_answer(') > result_text.count(')'))
+        )
+        
+        if is_truncated:
+            print("⚠️ COMPLETE FIX: Response appears truncated - attempting recovery...")
+            
+            # Try to get complete response from agent memory
+            if hasattr(agent, 'memory') and hasattr(agent.memory, 'steps'):
+                longest_text = result_text
+                
+                for step in reversed(agent.memory.steps):  # Check latest steps first
+                    if hasattr(step, 'observation') and step.observation:
+                        obs_text = str(step.observation)
+                        
+                        # Look for final_answer in observations
+                        if 'final_answer(' in obs_text and len(obs_text) > len(longest_text):
+                            print("✅ COMPLETE FIX: Found longer response in agent memory!")
+                            longest_text = obs_text
+                        
+                        # Also check for JSON content
+                        elif '"geojson_data":' in obs_text and len(obs_text) > len(longest_text):
+                            print("✅ COMPLETE FIX: Found JSON content in agent memory!")
+                            longest_text = obs_text
+                
+                if len(longest_text) > len(result_text):
+                    print(f"🔄 Using longer text: {len(longest_text)} vs {len(result_text)} chars")
+                    result_text = longest_text
+        
+        return result_text
+        
+    except Exception as e:
+        print(f"❌ Error processing agent result: {e}")
+        return str(agent_result)
+        
 @app.route('/api/query', methods=['POST'])
 def query():
-    """FIXED: Handle chat queries with proper tool verification and error handling."""
+    """FIXED: Handle chat queries with improved JSON response parsing."""
     global current_map_state
     
     print("\n" + "="*80)
-    print("🧠 FIXED AI INTELLIGENCE - VERIFIED TOOL LOADING")
+    print("🧠 FIXED AI INTELLIGENCE - IMPROVED JSON PARSING")
     print("="*80)
     
     data = request.json
@@ -786,16 +911,9 @@ def query():
     current_map_state["zoom"] = map_zoom
     
     try:
-        print("🧠 Running FIXED AI with verified tool loading...")
+        print("🧠 Running FIXED AI with improved JSON parsing...")
         
-        # ENHANCED: Check available tools before running
-        if hasattr(agent, 'tools'):
-            available_tools = list(agent.tools.keys())
-            print(f"🔧 Available tools: {available_tools}")
-        else:
-            print("⚠️ Could not determine available tools")
-        
-        # Enhanced context prompt with tool verification
+        # Enhanced context prompt with better JSON formatting instructions
         context_prompt = f"""
         User query: "{query_text}"
 
@@ -804,44 +922,46 @@ def query():
         - Zoom level: {map_zoom}
         - Features on map: {len(current_features)}
 
-        CRITICAL AI INTELLIGENCE INSTRUCTIONS:
-        You are an intelligent AI that analyzes user requests and provides structured responses.
+        CRITICAL RESPONSE FORMAT INSTRUCTIONS:
         
-        🔧 IMPORTANT: Your available tools are:
-        {available_tools if hasattr(agent, 'tools') else "Unable to determine available tools"}
+        When you find geographic data (buildings, addresses, etc.), you MUST format your response as:
         
-        🧠 YOUR INTELLIGENCE PROCESS:
-        1. ANALYZE the user query to understand their intent
-        2. CHECK what tools are actually available to you
-        3. USE ONLY the tools that are available - do NOT call tools that don't exist
-        4. For location searches, use web_search if location tools aren't available
-        5. For PDOK data, use web_search if PDOK tools aren't available
-        6. ALWAYS format geographic responses as JSON with text_description and geojson_data
-
-        📍 HANDLING MISSING TOOLS:
-        If discover_pdok_services is not available: Use web_search to find PDOK information
-        If search_location_coordinates is not available: Use web_search for "location coordinates"
-        If request_pdok_data is not available: Use web_search for PDOK WFS data
-
-        🎯 WORKFLOW ADAPTATION:
+        ```python
+        import json
         
-        For geospatial data requests:
-        1. First check what tools you actually have available
-        2. If you have PDOK tools: Use the intelligent workflow as designed
-        3. If you don't have PDOK tools: Use web_search to find information
-        4. ALWAYS format results as JSON when you find geographic data
+        response = {{
+            "text_description": "Your detailed description here",
+            "geojson_data": [
+                {{
+                    "name": "Feature Name",
+                    "lat": 52.123456,
+                    "lon": 6.123456,
+                    "description": "Feature description", 
+                    "geometry": {{"type": "Point/Polygon", "coordinates": [...]}},
+                    "properties": {{"key": "value", ...}}
+                }}
+                // ... more features
+            ]
+        }}
         
-        📋 CRITICAL REQUIREMENTS:
-        - ALWAYS import json when working with geographic data
-        - ALWAYS use json.dumps() for final_answer with structured responses
-        - Include both text_description AND geojson_data in geographic responses
-        - DO NOT call tools that don't exist - check your available tools first
-        - Use web_search as fallback when specialized tools aren't available
-
-        Now analyze the user's request and use ONLY the tools available to you.
+        final_answer(json.dumps(response))
+        ```
+        
+        CRITICAL JSON FORMATTING RULES:
+        1. Always use json.dumps() in final_answer()
+        2. Ensure valid JSON syntax - no trailing commas
+        3. Include ALL features in geojson_data array
+        4. Make sure coordinates are valid numbers
+        5. Include proper geometry objects for map display
+        
+        WORKFLOW:
+        1. Find location coordinates
+        2. Search for buildings/data
+        3. Process ALL results into proper JSON format
+        4. Use final_answer(json.dumps(response))
+        
+        Now analyze the user's request and provide a properly formatted JSON response.
         """
-        
-        print("🎯 AI will analyze query with available tools...")
         
         result = agent.run(context_prompt)
         
@@ -858,45 +978,78 @@ def query():
         else:
             result_text = str(result)
         
-        print(f"Result text preview: {result_text[:300]}...")
+        print(f"Result text length: {len(result_text)}")
+        print(f"Contains 'final_answer': {'final_answer' in result_text}")
+        print(f"Contains 'geojson_data': {'geojson_data' in result_text}")
         
-        # FIXED: Extract search coordinates using improved method
+        # Extract search coordinates
         search_location = extract_search_coordinates_from_agent_logs(agent)
         if search_location:
             print(f"📍 EXTRACTED SEARCH LOCATION: {search_location['name']} at {search_location['lat']}, {search_location['lon']}")
-        else:
-            print("📍 No search location found")
         
         # FIXED: Enhanced JSON detection and parsing
         parsed_response, found_json = extract_and_parse_json_response(result_text)
         
         if found_json and parsed_response:
-            print("✅ FOUND AND PARSED structured JSON response")
+            print("✅ SUCCESSFULLY PARSED structured JSON response")
             
             text_description = parsed_response.get('text_description', '')
             geojson_data = parsed_response.get('geojson_data', [])
+            
+            print(f"📝 Text description: {text_description[:100]}...")
+            print(f"🗺️ GeoJSON features: {len(geojson_data)}")
             
             # Validate and process geographic data
             if isinstance(geojson_data, list) and len(geojson_data) > 0:
                 processed_features = []
                 
-                for feature in geojson_data:
-                    if isinstance(feature, dict) and 'lat' in feature and 'lon' in feature:
-                        if feature.get('lat', 0) != 0 and feature.get('lon', 0) != 0:
-                            # Validate and fix geometry
-                            if 'geometry' in feature:
-                                validated_geom = validate_and_fix_geometry(feature['geometry'])
-                                if validated_geom:
-                                    feature['geometry'] = validated_geom
+                for i, feature in enumerate(geojson_data):
+                    try:
+                        if isinstance(feature, dict) and 'lat' in feature and 'lon' in feature:
+                            lat = float(feature['lat'])
+                            lon = float(feature['lon'])
                             
-                            # Ensure properties are serializable
-                            if 'properties' in feature:
-                                feature['properties'] = ensure_json_serializable(feature['properties'])
-                            
-                            processed_features.append(feature)
+                            if lat != 0 and lon != 0 and not (math.isnan(lat) or math.isnan(lon)):
+                                # Validate and fix geometry
+                                if 'geometry' in feature:
+                                    validated_geom = validate_and_fix_geometry(feature['geometry'])
+                                    if validated_geom:
+                                        feature['geometry'] = validated_geom
+                                    else:
+                                        # Create point geometry if validation fails
+                                        feature['geometry'] = {
+                                            'type': 'Point',
+                                            'coordinates': [lon, lat]
+                                        }
+                                else:
+                                    # Add point geometry if missing
+                                    feature['geometry'] = {
+                                        'type': 'Point', 
+                                        'coordinates': [lon, lat]
+                                    }
+                                
+                                # Ensure properties are serializable
+                                if 'properties' in feature:
+                                    feature['properties'] = ensure_json_serializable(feature['properties'])
+                                else:
+                                    feature['properties'] = {}
+                                
+                                # Ensure required fields
+                                feature['lat'] = lat
+                                feature['lon'] = lon
+                                if 'name' not in feature:
+                                    feature['name'] = f"Feature {i+1}"
+                                if 'description' not in feature:
+                                    feature['description'] = "PDOK Feature"
+                                
+                                processed_features.append(feature)
+                                
+                    except (ValueError, TypeError, KeyError) as e:
+                        print(f"⚠️ Error processing feature {i+1}: {e}")
+                        continue
                 
                 if processed_features:
-                    print(f"🗺️ AI generated {len(processed_features)} valid features")
+                    print(f"🎉 SUCCESSFULLY PROCESSED {len(processed_features)} valid features!")
                     
                     # Update global map state
                     current_map_state["features"] = processed_features
@@ -907,57 +1060,63 @@ def query():
                         "response": text_description,
                         "geojson_data": processed_features,
                         "agent_type": "ai_intelligent_geographic",
-                        "ai_method": "intelligent_analysis_fixed",
-                        "tools_used": "fixed_tool_loading"
+                        "ai_method": "intelligent_analysis_fixed_json",
+                        "features_processed": len(processed_features),
+                        "original_features": len(geojson_data)
                     }
                     
                     # Include search location if found
                     if search_location:
                         response_data["search_location"] = search_location
-                        print(f"📍 Including search location: {search_location['name']} at {search_location['lat']}, {search_location['lon']}")
+                        print(f"📍 Including search location: {search_location['name']}")
                     
-                    print("✅ RETURNING STRUCTURED RESPONSE WITH GEOJSON DATA")
+                    print("🎉 RETURNING STRUCTURED RESPONSE WITH VALID GEOJSON DATA!")
                     return jsonify(response_data)
                 
                 else:
-                    print("⚠️ No valid features after processing")
+                    print("❌ No valid features after processing - all features were invalid")
+                    error_msg = f"Found {len(geojson_data)} features but none were valid for map display"
+                    
+            else:
+                print("❌ No geojson_data array found or empty")
+                error_msg = "Response contained no geographic data to display"
             
-            # Text-only AI response but still include search location
-            print("📝 AI query with text-only response")
+            # Text-only response
             response_data = {
-                "response": text_description,
+                "response": text_description if text_description else str(result_text),
                 "agent_type": "ai_intelligent_text",
-                "ai_method": "intelligent_analysis_fixed",
-                "tools_used": "fixed_tool_loading"
+                "ai_method": "intelligent_analysis_text_only",
+                "issue": error_msg if 'error_msg' in locals() else "No geographic data"
             }
             
             if search_location:
                 response_data["search_location"] = search_location
-                print(f"📍 Including search location in text response: {search_location['name']}")
             
             return jsonify(response_data)
         
-        # FALLBACK: Handle text-only responses
-        print("📝 Processing as text-only response")
-        
-        # Try to extract any useful information from the text
-        response_data = {
-            "response": str(result_text),
-            "agent_type": "ai_intelligent_text_fallback",
-            "ai_method": "intelligent_analysis_fixed",
-            "tools_used": "fixed_tool_loading"
-        }
-        
-        # Always include search location if found
-        if search_location:
-            response_data["search_location"] = search_location
-            print(f"📍 Including search location in fallback response: {search_location['name']}")
-        
-        print("✅ RETURNING FALLBACK TEXT RESPONSE")
-        return jsonify(response_data)
+        else:
+            print("❌ FAILED to parse JSON from AI response")
+            print("🔍 Response preview:", result_text[:500])
+            
+            # Try to extract any useful information
+            response_data = {
+                "response": str(result_text),
+                "agent_type": "ai_text_fallback", 
+                "ai_method": "json_parsing_failed",
+                "debug_info": {
+                    "contains_final_answer": "final_answer" in result_text,
+                    "contains_geojson": "geojson_data" in result_text,
+                    "response_length": len(result_text)
+                }
+            }
+            
+            if search_location:
+                response_data["search_location"] = search_location
+            
+            return jsonify(response_data)
         
     except Exception as e:
-        error_msg = f"AI intelligence error: {str(e)}"
+        error_msg = f"AI processing error: {str(e)}"
         print(f"❌ ERROR: {error_msg}")
         
         # Try to extract search location even on error
@@ -970,17 +1129,16 @@ def query():
         error_response = {
             "error": error_msg,
             "agent_type": "error",
-            "tools_used": "none"
+            "ai_method": "exception_occurred"
         }
         
         if search_location:
             error_response["search_location"] = search_location
-            print(f"📍 Including search location in error response: {search_location['name']}")
         
         return jsonify(error_response)
 
     finally:
-        print("🎉 FIXED AI INTELLIGENCE QUERY COMPLETED")
+        print("🏁 FIXED JSON PARSING QUERY COMPLETED")
         print("="*80 + "\n")
 
 @app.route('/api/map-state', methods=['GET'])
