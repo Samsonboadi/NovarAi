@@ -39,7 +39,7 @@ class PDOKServiceDiscoveryTool(Tool):
                 "description": "Detailed topographic features"
             },
             "brk": {
-                "name": "BRK - Cadastral Registry",
+                "name": "C",
                 "url": "https://service.pdok.nl/lv/brk/wfs/v2_0", 
                 "layers": ["brk:perceel", "brk:zakelijkrecht"],
                 "description": "Land parcels and ownership"
@@ -663,7 +663,7 @@ class PDOKDataFilterTool(Tool):
         except Exception:
             return None
 
-            
+
 class PDOKMapDisplayTool(Tool):
     """
     Format filtered PDOK data for map display with proper descriptions and metadata.

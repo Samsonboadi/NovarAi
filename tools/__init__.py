@@ -1,6 +1,6 @@
 # tools/__init__.py 
 
-from .kadaster_tool import KadasterBRKTool, ContactHistoryTool
+#from .kadaster_tool import KadasterBRKTool, ContactHistoryTool
 from tools.enhanced_pdok_location_tool import IntelligentLocationSearchTool, SpecializedAddressSearchTool
 from .pdok_intelligent_agent_tool import EnhancedPDOKIntelligentAgent, SmartServiceDiscoveryTool
 from .pdok_modular_tools import PDOKLocationSearchTool 
@@ -13,6 +13,13 @@ from .pdok_service_discovery_tool import (
     PDOKBuildingsFlexibleTool
 )
 
+
+from tools.ai_intelligent_tools import (
+    PDOKServiceDiscoveryTool,
+    LocationSearchTool,
+    PDOKDataRequestTool
+)
+        
 # Legacy building tool (deprecated but included for compatibility)
 #try:
     #from .pdok_building_tool import PDOKBuildingsRealTool
@@ -40,7 +47,9 @@ __all__ = [
     #"PDOKBuildingsFlexibleTool",
     "EnhancedPDOKIntelligentAgent",
     "SmartServiceDiscoveryTool",
-    #"PDOKBuildingsRealTool"
+    "IntelligentServiceDiscoveryTool",
+    "AILocationCoordinatorTool",
+    "AIDrivenPDOKAgent",
 ]
 
 # Print info about available tools
