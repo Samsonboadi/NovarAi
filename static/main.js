@@ -1,5 +1,5 @@
-//static/main.js
-console.log("Loading FIXED Production Map-Aware PDOK Chat Assistant");
+// static/main.js - FIXED Production Map-Aware PDOK Chat Assistant
+console.log("Loading FIXED Production Map-Aware PDOK Chat Assistant with Enhanced Location Handling");
 
 try {
     const { useState, useEffect, useRef, useCallback } = React;
@@ -283,15 +283,14 @@ try {
     };
 
     const App = () => {
-        console.log("Initializing FIXED Production Map component");
+        console.log("Initializing FIXED Production Map component with Enhanced Location Handling");
         
         // State management
         const [query, setQuery] = useState('');
         const [messages, setMessages] = useState([
             {
                 type: 'assistant',
-                content: 'Hello! I\'m your map-aware AI Agent.\nI can help you explore buildings around any location and answer questions about them.\n\n🧭 Try asking:\n“Show me buildings near Leonard Springerlaan 37, Groningen.”\n\n📐 Or get specific:\n“Show me buildings near Leonard Springerlaan 37, Groningen with area > 300m².”'
-,
+                content: 'Hello! I\'m your FIXED map-aware AI Agent with enhanced location handling.\nI can help you explore buildings and plot them on the map with proper search location pins.\n\n🧭 Try asking:\n"Show me buildings near Leonard Springerlaan 37, Groningen."\n\n📐 Or get specific:\n"Show me buildings near Leonard Springerlaan 37, Groningen with area > 300m²."',
                 timestamp: new Date()
             }
         ]);
@@ -397,7 +396,7 @@ try {
                 });
                 mapInstance.current.addOverlay(overlayRef.current);
 
-                // Create location pin with inline styles (like working test)
+                // ENHANCED: Create location pin with better styling
                 const pinContainer = document.createElement('div');
                 pinContainer.style.cssText = `
                     pointer-events: none;
@@ -441,7 +440,7 @@ try {
                                 opacity: 0.6;
                             "></div>
                         </div>
-                        <div style="
+                        <div id="pin-label" style="
                             margin-top: 8px;
                             background: rgba(239, 68, 68, 0.9);
                             color: white;
@@ -451,6 +450,9 @@ try {
                             font-weight: 600;
                             white-space: nowrap;
                             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+                            max-width: 200px;
+                            text-overflow: ellipsis;
+                            overflow: hidden;
                         ">Search Location</div>
                     </div>
                 `;
@@ -541,90 +543,124 @@ try {
             }
         }, [mapView]);
 
-        // Show pin when searchLocation is set
+        // ENHANCED: Show pin when searchLocation is set with better validation and debugging
         useEffect(() => {
-            console.log("🔄 SEARCH LOCATION useEffect TRIGGERED");
+            console.log("🔄 ENHANCED SEARCH LOCATION useEffect TRIGGERED");
             console.log("  - searchLocation:", searchLocation);
             console.log("  - locationPinRef.current:", !!locationPinRef.current);
             console.log("  - mapInstance.current:", !!mapInstance.current);
             
-            if (searchLocation) {
-                console.log("📍 SEARCH LOCATION DATA:");
+            if (searchLocation && locationPinRef.current && mapInstance.current) {
+                console.log("📍 ENHANCED SEARCH LOCATION PROCESSING:");
                 console.log("  - Name:", searchLocation.name);
                 console.log("  - Latitude:", searchLocation.lat, typeof searchLocation.lat);
                 console.log("  - Longitude:", searchLocation.lon, typeof searchLocation.lon);
+                console.log("  - Source:", searchLocation.source);
                 
-                if (locationPinRef.current && mapInstance.current) {
+                // ENHANCED: Validate coordinates with better error messages
+                if (typeof searchLocation.lat !== 'number' || typeof searchLocation.lon !== 'number') {
+                    console.error("❌ INVALID COORDINATE TYPES:");
+                    console.error("  - lat:", searchLocation.lat, "type:", typeof searchLocation.lat);
+                    console.error("  - lon:", searchLocation.lon, "type:", typeof searchLocation.lon);
+                    return;
+                }
+                
+                if (isNaN(searchLocation.lat) || isNaN(searchLocation.lon)) {
+                    console.error("❌ NaN COORDINATES DETECTED:");
+                    console.error("  - lat isNaN:", isNaN(searchLocation.lat));
+                    console.error("  - lon isNaN:", isNaN(searchLocation.lon));
+                    return;
+                }
+                
+                // ENHANCED: Check if coordinates are within reasonable bounds for Netherlands
+                if (searchLocation.lat < 50.5 || searchLocation.lat > 54.0 || 
+                    searchLocation.lon < 3.0 || searchLocation.lon > 7.5) {
+                    console.warn("⚠️ COORDINATES OUTSIDE EXPECTED NETHERLANDS BOUNDS:");
+                    console.warn("  - Coordinates:", searchLocation.lat, searchLocation.lon);
+                    console.warn("  - Expected bounds: lat 50.5-54.0, lon 3.0-7.5");
+                    console.warn("  - Proceeding anyway...");
+                }
+                
+                try {
                     console.log("🎯 POSITIONING SEARCH LOCATION PIN:");
                     
-                    // Validate coordinates
-                    if (isNaN(searchLocation.lat) || isNaN(searchLocation.lon)) {
-                        console.error("❌ INVALID SEARCH LOCATION COORDINATES:");
-                        console.error("  - lat:", searchLocation.lat, "isNaN:", isNaN(searchLocation.lat));
-                        console.error("  - lon:", searchLocation.lon, "isNaN:", isNaN(searchLocation.lon));
+                    // Transform coordinates to map projection
+                    const pinCoords = ol.proj.fromLonLat([searchLocation.lon, searchLocation.lat]);
+                    console.log("🗺️ COORDINATE TRANSFORMATION:");
+                    console.log("  - Input WGS84:", [searchLocation.lon, searchLocation.lat]);
+                    console.log("  - Output map projection:", pinCoords);
+                    
+                    // Validate transformed coordinates
+                    if (!Array.isArray(pinCoords) || pinCoords.length !== 2 || 
+                        !isFinite(pinCoords[0]) || !isFinite(pinCoords[1])) {
+                        console.error("❌ INVALID TRANSFORMED COORDINATES:", pinCoords);
                         return;
                     }
                     
-                    // Check if coordinates are within reasonable bounds for Netherlands
-                    if (searchLocation.lat < 50.5 || searchLocation.lat > 54.0 || 
-                        searchLocation.lon < 3.0 || searchLocation.lon > 7.5) {
-                        console.warn("⚠️ SEARCH LOCATION OUTSIDE NETHERLANDS BOUNDS:");
-                        console.warn("  - Coordinates:", searchLocation.lat, searchLocation.lon);
-                        console.warn("  - Expected: lat 50.5-54.0, lon 3.0-7.5");
-                    }
+                    // Set pin position
+                    locationPinRef.current.setPosition(pinCoords);
+                    console.log("✅ SEARCH LOCATION PIN POSITIONED SUCCESSFULLY");
                     
-                    try {
-                        const pinCoords = ol.proj.fromLonLat([searchLocation.lon, searchLocation.lat]);
-                        console.log("🗺️ COORDINATE TRANSFORMATION:");
-                        console.log("  - Input WGS84:", [searchLocation.lon, searchLocation.lat]);
-                        console.log("  - Output map projection:", pinCoords);
-                        
-                        locationPinRef.current.setPosition(pinCoords);
-                        console.log("✅ SEARCH LOCATION PIN POSITIONED SUCCESSFULLY");
-                        
-                        // Verify the pin position was set
-                        const currentPosition = locationPinRef.current.getPosition();
-                        console.log("🔍 VERIFICATION - Pin position after setting:", currentPosition);
-                        
-                        // Update pin label with location name
-                        const pinElement = locationPinRef.current.getElement();
-                        if (pinElement) {
-                            console.log("🏷️ UPDATING PIN LABEL");
-                            const labelElement = pinElement.querySelector('[style*="Search Location"]');
-                            if (labelElement) {
-                                const shortName = searchLocation.name.length > 20 
-                                    ? searchLocation.name.substring(0, 20) + "..." 
-                                    : searchLocation.name;
-                                labelElement.textContent = shortName;
-                                console.log("✅ PIN LABEL UPDATED TO:", shortName);
-                            } else {
-                                console.warn("⚠️ PIN LABEL ELEMENT NOT FOUND");
+                    // Verify the pin position was set
+                    const currentPosition = locationPinRef.current.getPosition();
+                    console.log("🔍 VERIFICATION - Pin position after setting:", currentPosition);
+                    
+                    // ENHANCED: Update pin label with location name
+                    const pinElement = locationPinRef.current.getElement();
+                    if (pinElement) {
+                        console.log("🏷️ UPDATING PIN LABEL");
+                        const labelElement = pinElement.querySelector('#pin-label');
+                        if (labelElement) {
+                            // Truncate long names intelligently
+                            let displayName = searchLocation.name;
+                            if (displayName.length > 25) {
+                                // Try to find a good break point
+                                const words = displayName.split(' ');
+                                if (words.length > 1) {
+                                    displayName = words.slice(0, Math.ceil(words.length / 2)).join(' ') + '...';
+                                } else {
+                                    displayName = displayName.substring(0, 22) + '...';
+                                }
                             }
+                            
+                            labelElement.textContent = displayName;
+                            labelElement.title = searchLocation.name; // Full name on hover
+                            console.log("✅ PIN LABEL UPDATED TO:", displayName);
+                            console.log("📝 Full name available on hover:", searchLocation.name);
                         } else {
-                            console.warn("⚠️ PIN ELEMENT NOT FOUND");
+                            console.warn("⚠️ PIN LABEL ELEMENT NOT FOUND");
                         }
-                        
-                    } catch (coordError) {
-                        console.error("❌ ERROR IN COORDINATE TRANSFORMATION:", coordError);
+                    } else {
+                        console.warn("⚠️ PIN ELEMENT NOT FOUND");
                     }
                     
-                } else {
-                    console.error("❌ MISSING REQUIRED REFERENCES:");
-                    console.error("  - locationPinRef.current:", !!locationPinRef.current);
-                    console.error("  - mapInstance.current:", !!mapInstance.current);
+                    // ENHANCED: Center map on search location with appropriate zoom
+                    console.log("🗺️ CENTERING MAP ON SEARCH LOCATION");
+                    const view = mapInstance.current.getView();
+                    view.animate({
+                        center: pinCoords,
+                        zoom: Math.max(view.getZoom(), 15), // Ensure minimum zoom level
+                        duration: 1000
+                    });
+                    console.log("✅ MAP CENTERED AND ANIMATED TO SEARCH LOCATION");
+                    
+                } catch (coordError) {
+                    console.error("❌ ERROR IN ENHANCED COORDINATE PROCESSING:", coordError);
                 }
+                
             } else {
-                console.log("📍 NO SEARCH LOCATION TO DISPLAY");
+                console.log("📍 NO SEARCH LOCATION OR MISSING REFERENCES:");
+                console.log("  - searchLocation exists:", !!searchLocation);
+                console.log("  - locationPinRef.current exists:", !!locationPinRef.current);
+                console.log("  - mapInstance.current exists:", !!mapInstance.current);
+                
+                // ENHANCED: Hide pin if no search location
+                if (locationPinRef.current && mapInstance.current && !searchLocation) {
+                    console.log("🚫 HIDING SEARCH LOCATION PIN");
+                    locationPinRef.current.setPosition(undefined);
+                }
             }
         }, [searchLocation]);
-
-
-        useEffect(() => {
-            console.log("🔄 SEARCH LOCATION STATE CHANGED:");
-            console.log("  - Previous:", "unknown"); // React doesn't give us previous value
-            console.log("  - Current:", searchLocation);
-        }, [searchLocation]);
-
 
         // Switch between map views
         const switchMapView = (view) => {
@@ -640,7 +676,7 @@ try {
             }
         };
 
-        // Enhanced chat query handler
+        // ENHANCED: Chat query handler with better response processing
         const handleQuery = async () => {
             if (!query.trim()) return;
             
@@ -656,7 +692,7 @@ try {
             setQuery('');
 
             try {
-                console.log("🚀 Sending query to backend:", currentQuery);
+                console.log("🚀 ENHANCED: Sending query to FIXED backend:", currentQuery);
                 
                 const res = await fetch('/api/query', {
                     method: 'POST',
@@ -670,89 +706,97 @@ try {
                 });
                 
                 const data = await res.json();
-                console.log("📦 FULL RESPONSE FROM BACKEND:", data);
+                console.log("📦 ENHANCED: FULL RESPONSE FROM FIXED BACKEND:", data);
                 
-                // DEBUG: Check specifically for search_location
-                console.log("🔍 CHECKING FOR SEARCH LOCATION IN RESPONSE:");
-                console.log("  - data.search_location exists:", !!data.search_location);
-                console.log("  - search_location content:", data.search_location);
-                
-                let responseContent = '';
-                let foundBuildings = false;
-                
-                // ENHANCED: Handle search location from backend response
+                // ENHANCED: Process search location from backend response
                 if (data && data.search_location) {
                     const searchLoc = data.search_location;
-                    console.log("🎯 PROCESSING SEARCH LOCATION FROM BACKEND:");
+                    console.log("🎯 ENHANCED: PROCESSING SEARCH LOCATION FROM FIXED BACKEND:");
                     console.log("  - Name:", searchLoc.name);
                     console.log("  - Latitude:", searchLoc.lat);
                     console.log("  - Longitude:", searchLoc.lon);
                     console.log("  - Source:", searchLoc.source);
                     
-                    // Validate coordinates
+                    // Validate coordinates before setting state
                     if (typeof searchLoc.lat === 'number' && typeof searchLoc.lon === 'number' &&
-                        !isNaN(searchLoc.lat) && !isNaN(searchLoc.lon)) {
+                        !isNaN(searchLoc.lat) && !isNaN(searchLoc.lon) &&
+                        isFinite(searchLoc.lat) && isFinite(searchLoc.lon)) {
                         
-                        console.log("✅ COORDINATES ARE VALID - Setting search location state");
+                        console.log("✅ ENHANCED: COORDINATES ARE VALID - Setting search location state");
                         
                         setSearchLocation({
                             lat: searchLoc.lat,
                             lon: searchLoc.lon,
-                            name: searchLoc.name
+                            name: searchLoc.name,
+                            source: searchLoc.source || 'backend'
                         });
                         
-                        console.log("📍 SEARCH LOCATION STATE SET");
+                        console.log("📍 ENHANCED: SEARCH LOCATION STATE SET SUCCESSFULLY");
                         
-                        // Center map on search location
-                        if (mapInstance.current) {
-                            const searchCoords = ol.proj.fromLonLat([searchLoc.lon, searchLoc.lat]);
-                            console.log("🗺️ CENTERING MAP ON SEARCH LOCATION:");
-                            console.log("  - WGS84 coords:", [searchLoc.lon, searchLoc.lat]);
-                            console.log("  - Transformed coords:", searchCoords);
-                            
-                            mapInstance.current.getView().setCenter(searchCoords);
-                            mapInstance.current.getView().setZoom(16);
-                            console.log("✅ MAP CENTERED ON SEARCH LOCATION");
-                        } else {
-                            console.error("❌ MAP INSTANCE NOT AVAILABLE");
-                        }
                     } else {
-                        console.error("❌ INVALID COORDINATES IN SEARCH LOCATION:");
-                        console.error("  - lat type:", typeof searchLoc.lat, "value:", searchLoc.lat);
-                        console.error("  - lon type:", typeof searchLoc.lon, "value:", searchLoc.lon);
+                        console.error("❌ ENHANCED: INVALID COORDINATES IN SEARCH LOCATION:");
+                        console.error("  - lat:", searchLoc.lat, "type:", typeof searchLoc.lat, "isNaN:", isNaN(searchLoc.lat));
+                        console.error("  - lon:", searchLoc.lon, "type:", typeof searchLoc.lon, "isNaN:", isNaN(searchLoc.lon));
                     }
                 } else {
-                    console.warn("⚠️ NO SEARCH LOCATION IN BACKEND RESPONSE");
+                    console.warn("⚠️ ENHANCED: NO SEARCH LOCATION IN BACKEND RESPONSE");
                     console.log("🔍 Response keys:", Object.keys(data || {}));
                 }
                 
-                // Continue with existing response processing...
+                let responseContent = '';
+                let foundBuildings = false;
+                
+                // ENHANCED: Process different response formats
                 if (data && typeof data === 'object' && 'response' in data && 'geojson_data' in data) {
-                    console.log("✅ Detected combined response format");
+                    console.log("✅ ENHANCED: Detected combined response format");
                     
                     responseContent = data.response;
                     const geojsonData = data.geojson_data;
                     
                     if (Array.isArray(geojsonData) && geojsonData.length > 0) {
-                        // Process building data...
-                        console.log("Setting features for legend and statistics:", geojsonData.length);
-                        setFeatures(geojsonData);
-                        updateMapFeatures(geojsonData);
-                        foundBuildings = true;
+                        console.log("🗺️ ENHANCED: Processing building data for map display:", geojsonData.length);
+                        
+                        // Validate features before setting
+                        const validFeatures = geojsonData.filter(feature => {
+                            return feature && 
+                                   typeof feature === 'object' && 
+                                   typeof feature.lat === 'number' && 
+                                   typeof feature.lon === 'number' &&
+                                   !isNaN(feature.lat) && !isNaN(feature.lon) &&
+                                   feature.lat !== 0 && feature.lon !== 0;
+                        });
+                        
+                        console.log("✅ ENHANCED: Valid features after filtering:", validFeatures.length);
+                        
+                        if (validFeatures.length > 0) {
+                            setFeatures(validFeatures);
+                            updateMapFeatures(validFeatures);
+                            foundBuildings = true;
+                            
+                            console.log("📊 ENHANCED: Features set for legend and statistics:", validFeatures.length);
+                        } else {
+                            console.warn("⚠️ ENHANCED: No valid features after validation");
+                        }
+                    } else {
+                        console.log("📝 ENHANCED: Response has no geojson_data or empty array");
                     }
                 }
-                // Handle other response formats...
+                // Handle other response formats
                 else if (data && data.response) {
                     responseContent = data.response;
+                    console.log("📝 ENHANCED: Text-only response");
                 }
                 else if (data && data.error) {
                     responseContent = `I encountered an issue: ${data.error}`;
+                    console.error("❌ ENHANCED: Backend returned error:", data.error);
                 }
                 else if (typeof data === 'string') {
                     responseContent = data;
+                    console.log("📝 ENHANCED: String response");
                 }
                 else {
                     responseContent = JSON.stringify(data, null, 2);
+                    console.log("📝 ENHANCED: JSON response (fallback)");
                 }
                 
                 const assistantMessage = {
@@ -763,8 +807,15 @@ try {
                 
                 setMessages(prev => [...prev, assistantMessage]);
                 
+                // ENHANCED: Provide feedback about what was processed
+                if (foundBuildings) {
+                    console.log("🎉 ENHANCED: Successfully processed geographic response with buildings");
+                } else {
+                    console.log("💬 ENHANCED: Processed text-only response");
+                }
+                
             } catch (error) {
-                console.error("❌ QUERY ERROR:", error);
+                console.error("❌ ENHANCED QUERY ERROR:", error);
                 
                 const errorMessage = {
                     type: 'assistant',
@@ -784,7 +835,7 @@ try {
                 return;
             }
 
-            console.log(`Updating map with ${data.length} features`);
+            console.log(`ENHANCED: Updating map with ${data.length} features`);
             
             // Remove existing vector layers
             const layersToRemove = [];
@@ -799,6 +850,7 @@ try {
             });
 
             if (!data || data.length === 0) {
+                console.log("ENHANCED: No data to display on map");
                 return;
             }
 
@@ -808,7 +860,7 @@ try {
             data.forEach((f, index) => {
                 try {
                     if (!f.geometry || !f.lat || !f.lon || f.lat === 0 || f.lon === 0) {
-                        console.warn(`Skipping feature ${index + 1}: invalid data`);
+                        console.warn(`ENHANCED: Skipping feature ${index + 1}: invalid data`);
                         return;
                     }
                     
@@ -858,7 +910,7 @@ try {
                         });
                         
                     } catch (geomError) {
-                        console.error(`Geometry processing error for feature ${index + 1}:`, geomError);
+                        console.error(`ENHANCED: Geometry processing error for feature ${index + 1}:`, geomError);
                         geom = new ol.geom.Point(ol.proj.fromLonLat([f.lon, f.lat]));
                     }
                     
@@ -873,18 +925,18 @@ try {
                     featuresAdded++;
                     
                 } catch (error) {
-                    console.error(`Error processing feature ${index + 1}:`, error);
+                    console.error(`ENHANCED: Error processing feature ${index + 1}:`, error);
                 }
             });
 
-            console.log(`Total features added to map: ${featuresAdded}/${data.length}`);
+            console.log(`ENHANCED: Total features added to map: ${featuresAdded}/${data.length}`);
 
             if (featuresAdded === 0) {
-                console.error("No features were successfully added to the map");
+                console.error("ENHANCED: No features were successfully added to the map");
                 return;
             }
 
-            // ENHANCED STYLING
+            // ENHANCED STYLING with better visual hierarchy
             const vectorLayer = new ol.layer.Vector({
                 source: vectorSource,
                 style: feature => {
@@ -894,20 +946,25 @@ try {
                     if (geomType === 'Point') {
                         const area = props.area_m2 || props.oppervlakte_max || props.oppervlakte_min || 0;
                         let pointColor = '#667eea';
+                        let pointSize = 12;
                         
                         if (area > 1000) {
                             pointColor = '#dc2626';
+                            pointSize = 16;
                         } else if (area > 500) {
                             pointColor = '#f97316';
+                            pointSize = 14;
                         } else if (area > 200) {
                             pointColor = '#eab308';
+                            pointSize = 13;
                         } else if (area > 0) {
                             pointColor = '#22c55e';
+                            pointSize = 12;
                         }
                         
                         return new ol.style.Style({
                             image: new ol.style.Circle({
-                                radius: 12,
+                                radius: pointSize,
                                 fill: new ol.style.Fill({ color: pointColor }),
                                 stroke: new ol.style.Stroke({ color: '#ffffff', width: 3 })
                             })
@@ -919,21 +976,26 @@ try {
                         
                         let fillColor = 'rgba(102, 126, 234, 0.7)';
                         let strokeColor = '#667eea';
+                        let strokeWidth = 2;
                         
                         // Priority: Color by area if available
                         if (area > 0) {
                             if (area > 1000) {
                                 fillColor = 'rgba(220, 38, 38, 0.8)';
                                 strokeColor = '#dc2626';
+                                strokeWidth = 3;
                             } else if (area > 500) {
                                 fillColor = 'rgba(249, 115, 22, 0.8)';
                                 strokeColor = '#f97316';
+                                strokeWidth = 3;
                             } else if (area > 200) {
                                 fillColor = 'rgba(234, 179, 8, 0.8)';
                                 strokeColor = '#eab308';
+                                strokeWidth = 2;
                             } else {
                                 fillColor = 'rgba(34, 197, 94, 0.8)';
                                 strokeColor = '#22c55e';
+                                strokeWidth = 2;
                             }
                         }
                         // Fallback: Color by age
@@ -956,7 +1018,7 @@ try {
                         return new ol.style.Style({
                             stroke: new ol.style.Stroke({ 
                                 color: strokeColor, 
-                                width: 3
+                                width: strokeWidth
                             }),
                             fill: new ol.style.Fill({ 
                                 color: fillColor
@@ -978,18 +1040,24 @@ try {
             });
 
             mapInstance.current.addLayer(vectorLayer);
-            console.log("Vector layer added to map");
+            console.log("ENHANCED: Vector layer added to map");
             
-            // Fit to features
+            // ENHANCED: Fit to features with better padding and animation
             const extent = vectorSource.getExtent();
             
             if (extent && extent.every(coord => isFinite(coord))) {
+                // If we have a search location, include it in the extent
+                if (searchLocation) {
+                    const searchCoords = ol.proj.fromLonLat([searchLocation.lon, searchLocation.lat]);
+                    ol.extent.extend(extent, searchCoords);
+                }
+                
                 mapInstance.current.getView().fit(extent, { 
-                    padding: [50, 50, 50, 50], 
-                    maxZoom: 16,
-                    duration: 1000
+                    padding: [80, 80, 80, 80], 
+                    maxZoom: 17,
+                    duration: 1500
                 });
-                console.log("Map view fitted to features");
+                console.log("ENHANCED: Map view fitted to features with animation");
             }
         };
 
@@ -1039,14 +1107,17 @@ try {
                     </div>
                 </div>
 
-                {/* Map Context Info */}
+                {/* ENHANCED Map Context Info */}
                 <div className="absolute top-20 left-4 z-40 map-context-info">
                     <div className="floating-card p-3">
                         <div className="text-sm text-gray-700">
-                            <p className="font-medium">Map View</p>
+                            <p className="font-medium">FIXED Map View</p>
                             <p>Zoom: {mapZoom}</p>
                             {searchLocation && (
-                                <p className="text-red-600 font-medium">📍 {searchLocation.name}</p>
+                                <div className="text-red-600 font-medium">
+                                    <p>📍 {searchLocation.name}</p>
+                                    <p className="text-xs">Source: {searchLocation.source}</p>
+                                </div>
                             )}
                             {features.length > 0 && (
                                 <p className="text-blue-600 font-medium">{features.length} buildings loaded</p>
@@ -1063,8 +1134,8 @@ try {
                             <div className="flex items-center space-x-3">
                                 <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse-slow"></div>
                                 <div>
-                                    <h2 className="text-lg font-semibold text-white">Agentic Mapper</h2>
-                                    <p className="text-sm text-blue-100">Agent Mapping Assistant</p>
+                                    <h2 className="text-lg font-semibold text-white">FIXED Agentic Mapper</h2>
+                                    <p className="text-sm text-blue-100">Enhanced AI Assistant</p>
                                 </div>
                             </div>
                             <button 
@@ -1098,7 +1169,7 @@ try {
                                             <span></span>
                                             <span></span>
                                         </div>
-                                        <p className="text-xs opacity-75 mt-1">Agent processing...</p>
+                                        <p className="text-xs opacity-75 mt-1">FIXED AI processing...</p>
                                     </div>
                                 </div>
                             )}
@@ -1113,25 +1184,25 @@ try {
                                     onClick={() => setQuery("Show me buildings near Leonard Springerlaan 37, Groningen with area > 300m²")}
                                     className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded-full hover:bg-green-200 transition-colors"
                                 >
-                                    📍 Address + Pin
+                                    📍 Address + Pin + Plot
                                 </button>
                                 <button
-                                    onClick={() => setQuery("Find buildings that are 500 meters away from Amsterdam Centraal larger than 500m²")}
+                                    onClick={() => setQuery("Find buildings near Amsterdam Centraal larger than 500m²")}
                                     className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded-full hover:bg-blue-200 transition-colors"
                                 >
                                     🚉 Station Area
                                 </button>
                                 <button
-                                    onClick={() => setQuery("Show historic buildings that are between 200 meters away from Groningen train station built before 1950")}
+                                    onClick={() => setQuery("Show historic buildings near Groningen train station built before 1950")}
                                     className="px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded-full hover:bg-purple-200 transition-colors"
                                 >
                                     🏛️ Historic Search
                                 </button>
                                 <button
-                                    onClick={() => setQuery("Show me 100 buildings that are 500 meters away from  Leonard Springerlaan 37, Groningen with area > 150m²")}
+                                    onClick={() => setQuery("Show me buildings near Utrecht with area > 200m²")}
                                     className="px-2 py-1 text-xs bg-orange-100 text-orange-700 rounded-full hover:bg-orange-200 transition-colors"
                                 >
-                                    ✅ Test
+                                    ✅ FIXED Test
                                 </button>
                             </div>
                             
@@ -1142,7 +1213,7 @@ try {
                                     onChange={e => setQuery(e.target.value)}
                                     onKeyPress={handleKeyPress}
                                     className="flex-1 search-input rounded-xl px-4 py-2 text-sm focus:outline-none"
-                                    placeholder="Pin + Legends now working! 📍🏠📊"
+                                    placeholder="FIXED: Pins + JSON plotting working! 🎯📍🗺️"
                                     disabled={isLoading}
                                 />
                                 <button
@@ -1187,7 +1258,7 @@ try {
                 {/* Smart Legend Component (using inline styles) */}
                 {React.createElement(SmartLegend, { features: features })}
 
-                {/* Status Indicator */}
+                {/* ENHANCED Status Indicator */}
                 {features.length > 0 && (
                     <div style={{
                         position: 'fixed',
@@ -1203,19 +1274,25 @@ try {
                         color: '#15803d'
                     }}>
                         <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>
-                            ✅ SYSTEM READY!
+                            ✅ FIXED SYSTEM READY!
                         </div>
                         <div>📍 Pin: {searchLocation ? '✅' : '❌'}</div>
                         <div>🏠 Legend: ✅</div>
                         <div>📊 Stats: ✅</div>
+                        <div>🗺️ JSON Plot: ✅</div>
                         <div>{features.length} buildings</div>
+                        {searchLocation && (
+                            <div style={{ fontSize: '10px', marginTop: '4px', color: '#dc2626' }}>
+                                📍 {searchLocation.name}
+                            </div>
+                        )}
                     </div>
                 )}
             </div>
         );
     };
 
-    console.log("Rendering Production Map-Aware React app");
+    console.log("Rendering FIXED Production Map-Aware React app with Enhanced Location Handling");
     
     if (root) {
         root.render(React.createElement(App));
@@ -1224,5 +1301,5 @@ try {
     }
     
 } catch (error) {
-    console.error("Failed to initialize  Production React app:", error);
+    console.error("Failed to initialize FIXED Production React app:", error);
 }
