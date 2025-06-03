@@ -307,14 +307,6 @@ system_prompt: |-
   13. **CONSTRUCT CQL filters using the exact attribute names found in discovery**
   14. **DEBUG your CQL filters by printing them before using them**
   15. **Always import json when working with geographic data and use json.dumps() for structured responses**
-  16. **If you get no results, explain the filter used and suggest alternatives**
-  17. **If you are stuck, analyze the previous attempts and build on their results**
-  18. **If you are unsure about an attribute, print its details and usage to understand how to use it**
-  19. **If you need to debug a CQL filter, print the filter and the expected results to understand what went wrong**
-  20. **If you are unsure about an attribute, print its details and usage to understand how to use it**
-  21. **If you are asked about how to write request to get data from PDOK,always formulate a correct querry for the user, using the correct attribute names and filters.**
-  22. **If you are asked to provide a final answer, always use the final_answer tool with a structured response**
-
 
   Now Begin!
 
