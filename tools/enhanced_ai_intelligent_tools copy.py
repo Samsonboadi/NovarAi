@@ -8,48 +8,31 @@ from smolagents import Tool
 import math
 from typing import Dict, List, Optional, Union, Tuple
 
-import requests
-import json
-import xml.etree.ElementTree as ET
-from datetime import datetime
-from smolagents import Tool
-import math
-from typing import Dict, List, Optional, Union, Tuple
-
-import requests
-import json
-import xml.etree.ElementTree as ET
-from datetime import datetime
-from smolagents import Tool
-import math
-from typing import Dict, List, Optional, Union, Tuple
-
 class EnhancedPDOKServiceDiscoveryTool(Tool):
     """
-    Enhanced service discovery tool with ONLY verified working PDOK services.
-    Updated based on actual QGIS testing and working URLs.
+    Enhanced service discovery tool that gets detailed attribute information.
+    The AI uses this to understand exactly what attributes are available for filtering.
     """
     
     name = "discover_pdok_services"
-    description = """Discover VERIFIED WORKING PDOK WFS services, layers, and their detailed attributes.
+    description = """Discover available PDOK WFS services, layers, and their detailed attributes.
 
-This tool provides information about ONLY the services that are confirmed to work and return data.
+This tool helps the AI understand what PDOK services, layers, and attributes are available.
 The AI should use this to learn about available endpoints AND their filterable attributes.
 
 Returns detailed information about:
-- VERIFIED working WFS services (BAG, BGT, CBS, Cadastral Map v5, Natura 2000, Wetlands)
+- Available WFS services (BAG, BGT, BRK, CBS)
 - Layers within each service with descriptions
 - Available attributes for each layer (for CQL filtering)
 - Data types and constraints for attributes
 - Service availability status
-- Coordinate system requirements and bounding box guidance
 
 The AI can then use this information to select appropriate services and construct proper CQL filters with correct attribute names."""
     
     inputs = {
         "service_name": {
             "type": "string", 
-            "description": "Specific service to check (bag, bgt, cbs, cadastral, natura2000, wetlands) or 'all' for all services",
+            "description": "Specific service to check (bag, bgt, brk, cbs) or 'all' for all services",
             "nullable": True
         },
         "get_attributes": {
@@ -63,122 +46,44 @@ The AI can then use this information to select appropriate services and construc
     
     def __init__(self):
         super().__init__()
-        # ONLY VERIFIED WORKING PDOK services (deprecated services removed)
+        # Known PDOK services for the AI to discover
         self.services = {
             "bag": {
                 "name": "BAG - Buildings and Addresses",
                 "url": "https://service.pdok.nl/lv/bag/wfs/v2_0",
                 "description": "Dutch Buildings and Addresses Database",
-                "typical_use": "Buildings (panden), addresses (nummeraanduiding), residential objects (verblijfsobject)",
-                "keywords": ["buildings", "addresses", "residential", "properties"],
-                "coordinate_system": "EPSG:28992",
-                "coordinate_notes": "Uses RD New (Dutch national grid system)",
-                "status": "VERIFIED WORKING",
-                "qgis_tested": True
+                "typical_use": "Buildings (panden), addresses (nummeraanduiding), residential objects (verblijfsobject)"
             },
             "bgt": {
                 "name": "BGT - Large Scale Topography", 
                 "url": "https://service.pdok.nl/lv/bgt/wfs/v1_0",
                 "description": "Detailed topographic features",
-                "typical_use": "Building surfaces, roads, water features, land use",
-                "keywords": ["topography", "roads", "water", "land use", "surfaces"],
-                "coordinate_system": "EPSG:28992",
-                "coordinate_notes": "Uses RD New (Dutch national grid system)",
-                "status": "VERIFIED WORKING",
-                "qgis_tested": True
+                "typical_use": "Building surfaces, roads, water features, land use"
+            },
+            "brk": {
+                "name": "BRK - Cadastral Registry",
+                "url": "https://service.pdok.nl/lv/brk/wfs/v2_0",
+                "description": "Land parcels and ownership information",
+                "typical_use": "Land parcels (perceel), ownership rights (zakelijkrecht)"
             },
             "cbs": {
                 "name": "CBS - Statistics Netherlands",
                 "url": "https://service.pdok.nl/cbs/wijkenbuurten/wfs/v1_0",
                 "description": "Administrative boundaries and statistics",
-                "typical_use": "Municipalities (gemeenten), districts (wijken), neighborhoods (buurten)",
-                "keywords": ["statistics", "boundaries", "municipalities", "districts", "neighborhoods"],
-                "coordinate_system": "EPSG:28992",
-                "coordinate_notes": "Uses RD New (Dutch national grid system)",
-                "status": "VERIFIED WORKING",
-                "qgis_tested": True
-            },
-            "cadastral": {
-                "name": "Cadastral Map v5 - Kadastrale Kaart",
-                "url": "https://service.pdok.nl/kadaster/kadastralekaart/wfs/v5_0",
-                "description": "Overview of cadastral parcel locations in Netherlands. Functions as link between terrain and registration. VERSION 5 with quality labels.",
-                "typical_use": "Cadastral parcels (kadastrale percelen), cadastral boundaries, building outlines, address ranges, public space names",
-                "keywords": ["cadastral", "parcels", "boundaries", "kadaster", "terrain", "reference", "quality labels", "v5"],
-                "coordinate_system": "EPSG:28992",
-                "coordinate_notes": "Uses RD New (Dutch national grid system) - Current v5 service",
-                "status": "VERIFIED WORKING",
-                "qgis_tested": True,
-                "key_attributes": {
-                    "kadastraleGrootteWaarde": "Parcel area in square meters - USE THIS for area filtering"
-                },
-                "important_layers": ["kadastralekaart:Perceel", "kadastralekaart:KadastraleGrens", "kadastralekaart:Bebouwing"]
-            },
-            "natura2000": {
-                "name": "Natura 2000 - Protected Nature Areas",
-                "url": "https://service.pdok.nl/rvo/natura2000/wfs/v1_0",
-                "description": "Natura 2000 is the coherent network of protected natural areas in the European Union consisting of Bird Directive and Habitat Directive areas. 162 areas in Netherlands including 3 marine areas.",
-                "typical_use": "Protected nature areas, Bird Directive areas, Habitat Directive areas, nature monuments",
-                "keywords": ["natura2000", "protected areas", "nature", "habitat", "bird directive", "conservation", "environment"],
-                "coordinate_system": "EPSG:28992",
-                "coordinate_notes": "Uses RD New (Dutch national grid system)",
-                "status": "VERIFIED WORKING",
-                "qgis_tested": True,
-                "feature_count": 208,
-                "extent": "Netherlands-wide coverage",
-                "layer_name": "natura2000:natura2000",
-                "geometry_type": "Polygon"
-            },
-            "wetlands": {
-                "name": "Wetlands - Ramsar Protected Wetlands",
-                "url": "https://service.pdok.nl/rvo/beschermdegebieden/wetlands/wfs/v1_0",
-                "description": "Wetlands are the wet natural areas in Netherlands under Ramsar Convention. 44 Wetlands covering 27% of total Netherlands area including territorial waters.",
-                "typical_use": "Wetland areas, water-rich areas, marshes, peat areas, natural/artificial water bodies",
-                "keywords": ["wetlands", "ramsar", "protected areas", "water", "marshes", "peat", "conservation"],
-                "coordinate_system": "EPSG:28992",
-                "coordinate_notes": "Uses RD New (Dutch national grid system)",
-                "status": "VERIFIED WORKING",
-                "qgis_tested": True,
-                "feature_count": 86,
-                "extent": "Netherlands-wide coverage",
-                "layer_name": "beschermdegebieden:protectedsite",
-                "geometry_type": "Polygon"
-            }
-        }
-        
-        # Updated guidance focusing on working services
-        self.known_issues = {
-            "coordinate_systems": {
-                "problem": "PDOK services use EPSG:28992 (RD New) but many tools expect WGS84",
-                "solution": "Always convert WGS84 coordinates to RD New before making requests",
-                "rd_bounds": "X: ~0-300000, Y: ~300000-700000 (approximate Netherlands bounds)"
-            },
-            "bbox_precision": {
-                "problem": "Very small bounding boxes may return 0 results",
-                "solution": "Use larger search radius (2-10km) or remove CQL filter to test service",
-                "minimum_size": "Try bbox with at least 1000m x 1000m area"
-            },
-            "attribute_names": {
-                "problem": "Wrong attribute names in CQL filters",
-                "solution": "Always discover attributes first, use exact discovered attribute names",
-                "critical": "For cadastral: use 'kadastraleGrootteWaarde' for area filtering"
-            },
-            "service_testing": {
-                "problem": "Services may appear unavailable due to request format",
-                "solution": "Test basic GetFeature requests without CQL filters first",
-                "working_services": "All services in this tool have been verified to work in QGIS"
+                "typical_use": "Municipalities (gemeenten), districts (wijken), neighborhoods (buurten)"
             }
         }
     
     def forward(self, service_name: Optional[str] = "all", get_attributes: Optional[bool] = True) -> Dict:
-        """Enhanced discovery with ONLY verified working services."""
+        """Enhanced discovery with detailed attribute information."""
         try:
-            print(f"🔍 VERIFIED PDOK services discovery: {service_name} (attributes: {get_attributes})")
+            print(f"🔍 Enhanced PDOK discovery: {service_name} (attributes: {get_attributes})")
             
             if service_name == "all" or service_name is None:
                 discovered_services = {}
                 
                 for key, config in self.services.items():
-                    print(f"📡 Checking {key} ({config['status']})...")
+                    print(f"📡 Checking {key} with detailed analysis...")
                     capabilities = self._get_enhanced_capabilities(config["url"], get_attributes)
                     
                     discovered_services[key] = {
@@ -190,32 +95,13 @@ The AI can then use this information to select appropriate services and construc
                 
                 return {
                     "services": discovered_services,
-                    "summary": f"Discovery of {len(discovered_services)} VERIFIED WORKING PDOK services",
+                    "summary": f"Enhanced discovery of {len(discovered_services)} PDOK services",
                     "ai_guidance": {
                         "for_buildings": "Use 'bag' service with 'bag:pand' layer",
                         "for_addresses": "Use 'bag' service with 'bag:nummeraanduiding'",
-                        "for_parcels": "Use 'cadastral' service with 'kadastralekaart:Perceel' layer - VERIFIED WORKING",
+                        "for_parcels": "Use 'brk' service with 'brk:perceel'",
                         "for_boundaries": "Use 'cbs' service for administrative boundaries",
-                        "for_cadastral_map": "Use 'cadastral' service with 'kadastralekaart:Perceel' layer - current v5 service",
-                        "for_nature_protection": "Use 'natura2000' service with 'natura2000:natura2000' layer (208 features)",
-                        "for_wetlands": "Use 'wetlands' service with 'beschermdegebieden:protectedsite' layer (86 features)",
-                        "for_environmental_analysis": "Combine 'natura2000' and 'wetlands' services for comprehensive environmental data",
-                        "attribute_usage": "All services verified to work - use 'kadastraleGrootteWaarde' for parcel area filtering",
-                        "coordinate_requirements": "ALL services use EPSG:28992 (RD New) - convert WGS84 to RD before requests"
-                    },
-                    "service_selection_tips": {
-                        "parcel_data": "Use 'cadastral' service - VERIFIED WORKING with real data",
-                        "environmental_data": "Use 'natura2000' (208 areas) or 'wetlands' (86 areas) depending on needs",
-                        "attribute_names": "Use exact attribute names: 'kadastraleGrootteWaarde' for parcel area",
-                        "all_services_tested": "All services in this tool have been verified to return actual data in QGIS",
-                        "coordinate_conversion": "Always ensure coordinates are in RD New (EPSG:28992) format"
-                    },
-                    "troubleshooting": self.known_issues,
-                    "verification_status": {
-                        "all_services": "VERIFIED WORKING - tested in QGIS with real data",
-                        "removed_services": "Deprecated and non-working services have been removed",
-                        "coordinate_system": "All services confirmed to use EPSG:28992 (RD New)",
-                        "data_confirmed": "All services return actual feature data"
+                        "attribute_usage": "Check 'attributes' field for each layer to see available filter fields"
                     }
                 }
             
@@ -229,22 +115,14 @@ The AI can then use this information to select appropriate services and construc
                         "capabilities": capabilities,
                         "available": not capabilities.get('error'),
                         "layers": capabilities.get('layers', [])
-                    },
-                    "usage_recommendations": self._get_usage_recommendations(service_name),
-                    "troubleshooting": self.known_issues,
-                    "verification_status": f"VERIFIED WORKING - {config.get('status', 'Status unknown')}"
+                    }
                 }
             
             else:
-                available_services = list(self.services.keys())
-                return {
-                    "error": f"Unknown service: {service_name}. Available VERIFIED services: {available_services}",
-                    "available_services": available_services,
-                    "note": "Only verified working services are included in this tool"
-                }
+                return {"error": f"Unknown service: {service_name}. Available: {list(self.services.keys())}"}
                 
         except Exception as e:
-            return {"error": f"Service discovery error: {str(e)}"}
+            return {"error": f"Enhanced service discovery error: {str(e)}"}
     
     def _get_enhanced_capabilities(self, service_url: str, get_attributes: bool = True) -> Dict:
         """Get enhanced WFS capabilities with attribute information."""
@@ -260,9 +138,6 @@ The AI can then use this information to select appropriate services and construc
             
             # Parse XML to extract layer info
             root = ET.fromstring(response.content)
-            
-            # Extract service information
-            service_info = self._extract_service_info(root)
             
             layers = []
             for feature_type in root.iter():
@@ -290,49 +165,18 @@ The AI can then use this information to select appropriate services and construc
                 "layers": layers,
                 "layer_count": len(layers),
                 "service_operational": True,
-                "attributes_included": get_attributes,
-                "service_info": service_info,
-                "coordinate_system": "EPSG:28992",
-                "coordinate_notes": "Service verified to work with RD New coordinate system"
+                "attributes_included": get_attributes
             }
             
         except Exception as e:
             return {"error": f"Could not get enhanced capabilities: {str(e)}"}
     
-    def _extract_service_info(self, root) -> Dict:
-        """Extract additional service information from capabilities XML."""
-        service_info = {}
-        
-        try:
-            # Extract service identification
-            service_id = root.find('.//{http://www.opengis.net/ows/1.1}ServiceIdentification')
-            if service_id is not None:
-                title_elem = service_id.find('.//{http://www.opengis.net/ows/1.1}Title')
-                abstract_elem = service_id.find('.//{http://www.opengis.net/ows/1.1}Abstract')
-                
-                if title_elem is not None:
-                    service_info['title'] = title_elem.text
-                if abstract_elem is not None:
-                    service_info['abstract'] = abstract_elem.text
-                
-                # Extract keywords
-                keywords = []
-                for keyword_elem in service_id.findall('.//{http://www.opengis.net/ows/1.1}Keyword'):
-                    if keyword_elem.text:
-                        keywords.append(keyword_elem.text)
-                service_info['keywords'] = keywords
-        
-        except Exception as e:
-            service_info['extraction_error'] = str(e)
-        
-        return service_info
-    
     def _get_layer_attributes(self, service_url: str, layer_name: str) -> Dict:
         """Get detailed attribute information for a specific layer."""
         try:
-            print(f"🔬 Getting attributes for VERIFIED layer: {layer_name}")
+            print(f"🔬 Getting attributes for layer: {layer_name}")
             
-            # First try DescribeFeatureType request to get attribute details
+            # Make DescribeFeatureType request to get attribute details
             params = {
                 'service': 'WFS',
                 'version': '2.0.0',
@@ -364,8 +208,18 @@ The AI can then use this information to select appropriate services and construc
                                             "filterable": True
                                         }
                                         
-                                        # Add enhanced guidance for common attribute patterns
-                                        self._add_attribute_guidance(attributes[attr_name], attr_name, layer_name)
+                                        # Add guidance for common attribute patterns
+                                        if any(word in attr_name.lower() for word in ['oppervlakte', 'area', 'grootte']):
+                                            attributes[attr_name]["usage"] = "Use for area filtering (numeric)"
+                                            attributes[attr_name]["example"] = f"{attr_name} >= 300"
+                                        
+                                        elif any(word in attr_name.lower() for word in ['jaar', 'year', 'bouw']):
+                                            attributes[attr_name]["usage"] = "Use for year filtering (numeric)"
+                                            attributes[attr_name]["example"] = f"{attr_name} <= 1950"
+                                        
+                                        elif any(word in attr_name.lower() for word in ['status', 'type', 'functie']):
+                                            attributes[attr_name]["usage"] = "Use for categorical filtering (text)"
+                                            attributes[attr_name]["example"] = f"{attr_name} = 'some_value'"
             
             # If no attributes found via schema, try a sample feature request
             if not attributes:
@@ -375,59 +229,12 @@ The AI can then use this information to select appropriate services and construc
             return {
                 "count": len(attributes),
                 "details": attributes,
-                "discovery_method": "DescribeFeatureType" if attributes else "sample_feature",
-                "verification_note": "Layer verified to work in QGIS"
+                "discovery_method": "DescribeFeatureType" if attributes else "sample_feature"
             }
             
         except Exception as e:
             print(f"⚠️ Could not get attributes for {layer_name}: {e}")
             return {"error": f"Could not get attributes: {str(e)}"}
-    
-    def _add_attribute_guidance(self, attr_info: Dict, attr_name: str, layer_name: str) -> None:
-        """Add usage guidance based on attribute name patterns."""
-        attr_lower = attr_name.lower()
-        
-        # CRITICAL: Specific guidance for cadastral parcels
-        if 'kadastrale' in attr_lower and 'grootte' in attr_lower:
-            attr_info["usage"] = "⚠️ VERIFIED: Use for cadastral parcel area filtering (numeric)"
-            attr_info["example"] = f"{attr_name} >= 5000"
-            attr_info["unit_note"] = "Area in square meters (m²)"
-            attr_info["critical_note"] = "VERIFIED ATTRIBUTE for parcel area filtering in working service"
-        
-        # Area/size attributes (general)
-        elif any(word in attr_lower for word in ['oppervlakte', 'area', 'grootte']):
-            attr_info["usage"] = "Use for area filtering (numeric)"
-            attr_info["example"] = f"{attr_name} >= 1000"
-            attr_info["unit_note"] = "Usually in square meters (m²)"
-        
-        # Name attributes for environmental services
-        elif any(word in attr_lower for word in ['naam', 'name', 'gebiedsnaam']):
-            attr_info["usage"] = "Use for name-based filtering (text)"
-            attr_info["example"] = f"{attr_name} LIKE '%search_term%'"
-            
-            # Special guidance for natura2000 and wetlands
-            if 'natura2000' in layer_name.lower() or 'wetlands' in layer_name.lower() or 'beschermde' in layer_name.lower():
-                attr_info["environmental_note"] = "Use for finding specific protected areas by name"
-        
-        # Status/type attributes
-        elif any(word in attr_lower for word in ['status', 'type', 'functie']):
-            attr_info["usage"] = "Use for categorical filtering (text)"
-            attr_info["example"] = f"{attr_name} = 'some_value'"
-            attr_info["note"] = "Check actual values in data before filtering"
-        
-        # Year/date attributes
-        elif any(word in attr_lower for word in ['jaar', 'year', 'bouw']):
-            attr_info["usage"] = "Use for year filtering (numeric)"
-            attr_info["example"] = f"{attr_name} <= 1950"
-        
-        # Code/ID attributes
-        elif any(word in attr_lower for word in ['code', 'id']):
-            attr_info["usage"] = "Use for identifier filtering (text/numeric)"
-            attr_info["example"] = f"{attr_name} = 'specific_code'"
-        
-        else:
-            attr_info["usage"] = "General filtering attribute"
-            attr_info["example"] = f"{attr_name} = 'value'"
     
     def _get_attributes_from_sample(self, service_url: str, layer_name: str) -> Dict:
         """Get attributes by requesting a sample feature."""
@@ -461,7 +268,13 @@ The AI can then use this information to select appropriate services and construc
                     }
                     
                     # Add usage guidance
-                    self._add_attribute_guidance(attributes[attr_name], attr_name, layer_name)
+                    if any(word in attr_name.lower() for word in ['oppervlakte', 'area', 'grootte']):
+                        attributes[attr_name]["usage"] = "Use for area filtering (numeric)"
+                        attributes[attr_name]["example"] = f"{attr_name} >= 300"
+                    
+                    elif any(word in attr_name.lower() for word in ['jaar', 'year', 'bouw']):
+                        attributes[attr_name]["usage"] = "Use for year filtering (numeric)"
+                        attributes[attr_name]["example"] = f"{attr_name} <= 1950"
             
             return attributes
             
@@ -474,127 +287,38 @@ The AI can then use this information to select appropriate services and construc
         guidance = {
             "available_filters": [],
             "examples": [],
-            "recommendations": [],
-            "critical_notes": []
+            "recommendations": []
         }
         
         if attributes.get('details'):
             for attr_name, attr_info in attributes['details'].items():
                 if attr_info.get('filterable'):
-                    filter_info = {
+                    guidance["available_filters"].append({
                         "attribute": attr_name,
                         "type": attr_info.get('type', 'unknown'),
                         "usage": attr_info.get('usage', 'General filtering'),
                         "example": attr_info.get('example', f"{attr_name} = 'value'")
-                    }
-                    
-                    # Add special notes for important attributes
-                    if attr_info.get('critical_note'):
-                        filter_info["critical_note"] = attr_info['critical_note']
-                    
-                    if attr_info.get('environmental_note'):
-                        filter_info["environmental_note"] = attr_info['environmental_note']
-                    
-                    guidance["available_filters"].append(filter_info)
+                    })
         
         # Add specific recommendations based on layer type
-        if 'perceel' in layer_name.lower():
-            guidance["recommendations"].extend([
-                "✅ VERIFIED: Use 'kadastraleGrootteWaarde' for parcel area filtering",
-                "Service confirmed working in QGIS with real data"
-            ])
-            guidance["critical_notes"].append(
-                "VERIFIED: Use 'kadastraleGrootteWaarde' for area filtering in m²"
-            )
-        
-        elif 'natura2000' in layer_name.lower():
-            guidance["recommendations"].extend([
-                "Use for 208 protected nature areas in Netherlands",
-                "Filter by area names using 'naam' or similar attributes",
-                "Service verified working with polygon geometry"
-            ])
-        
-        elif 'beschermdegebieden' in layer_name.lower() or 'wetlands' in layer_name.lower():
-            guidance["recommendations"].extend([
-                "Use for 86 Ramsar wetland areas in Netherlands",
-                "Covers 27% of Netherlands total area including territorial waters",
-                "Service verified working with polygon geometry"
-            ])
-        
-        elif 'pand' in layer_name.lower():
+        if 'pand' in layer_name.lower():
             guidance["recommendations"].extend([
                 "For building area filtering, look for attributes containing 'oppervlakte'",
                 "For building age filtering, look for attributes containing 'bouwjaar'",
-                "Service verified working for building data"
+                "For building status filtering, look for 'status' attributes"
             ])
         
-        # Add coordinate system guidance
-        guidance["critical_notes"].extend([
-            "ALL services VERIFIED to use EPSG:28992 (RD New) coordinate system",
-            "Convert WGS84 coordinates to RD New before making bounding box requests",
-            "All services tested and confirmed working in QGIS",
-            "Use appropriate bounding box sizes (>1000m radius) for reliable results"
-        ])
+        elif 'verblijfsobject' in layer_name.lower():
+            guidance["recommendations"].extend([
+                "For residential area filtering, look for 'oppervlakte' attributes",
+                "For usage type filtering, look for 'gebruiksdoel' attributes"
+            ])
         
         return guidance
-    
-    def _get_usage_recommendations(self, service_name: str) -> Dict:
-        """Provide specific usage recommendations for verified services."""
-        recommendations = {
-            "bag": {
-                "best_for": ["Finding building information", "Address lookup", "Property analysis"],
-                "common_layers": ["bag:pand", "bag:nummeraanduiding", "bag:verblijfsobject"],
-                "tips": "VERIFIED working service - use spatial filters for location-based queries",
-                "status": "✅ VERIFIED WORKING"
-            },
-            "bgt": {
-                "best_for": ["Detailed topographic analysis", "Infrastructure mapping", "Land use studies"],
-                "common_layers": ["Various topographic feature layers"],
-                "tips": "VERIFIED working service - high detail level, use appropriate scale for performance",
-                "status": "✅ VERIFIED WORKING"
-            },
-            "cbs": {
-                "best_for": ["Administrative boundaries", "Statistical analysis", "Demographic studies"],
-                "common_layers": ["Municipality, district, and neighborhood layers"],
-                "tips": "VERIFIED working service - good for regional analysis and administrative context",
-                "status": "✅ VERIFIED WORKING"
-            },
-            "cadastral": {
-                "best_for": ["Visual parcel mapping", "Reference base layer", "Cadastral visualization", "Parcel area analysis"],
-                "common_layers": ["kadastralekaart:Perceel", "kadastralekaart:KadastraleGrens", "kadastralekaart:Bebouwing"],
-                "tips": "✅ VERIFIED WORKING: Current v5 service. Use 'kadastraleGrootteWaarde' for area filtering.",
-                "critical_attributes": {
-                    "kadastraleGrootteWaarde": "✅ VERIFIED: Parcel area in square meters - confirmed working"
-                },
-                "status": "✅ VERIFIED WORKING - Current active service"
-            },
-            "natura2000": {
-                "best_for": ["Environmental protection analysis", "Conservation planning", "Protected area identification"],
-                "common_layers": ["natura2000:natura2000"],
-                "tips": "✅ VERIFIED WORKING: 208 protected areas confirmed in QGIS",
-                "verified_info": {
-                    "feature_count": 208,
-                    "geometry_type": "Polygon",
-                    "extent": "Netherlands-wide coverage"
-                },
-                "status": "✅ VERIFIED WORKING"
-            },
-            "wetlands": {
-                "best_for": ["Wetland analysis", "Ramsar convention areas", "Water conservation planning"],
-                "common_layers": ["beschermdegebieden:protectedsite"],
-                "tips": "✅ VERIFIED WORKING: 86 wetland areas confirmed in QGIS - covers 27% of Netherlands",
-                "verified_info": {
-                    "feature_count": 86,
-                    "geometry_type": "Polygon",
-                    "coverage": "27% of Netherlands total area"
-                },
-                "status": "✅ VERIFIED WORKING"
-            }
-        }
-        
-        return recommendations.get(service_name, {"best_for": [], "common_layers": [], "tips": "", "status": "Unknown"})
 
 
+# Keep the existing LocationSearchTool and PDOKDataRequestTool from the previous version
+# but update their imports and usage
 
 class LocationSearchTool(Tool):
     """Location search tool for the AI to find coordinates."""

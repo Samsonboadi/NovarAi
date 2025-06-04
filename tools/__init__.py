@@ -1,24 +1,18 @@
 # tools/__init__.py 
 
 #from .kadaster_tool import KadasterBRKTool, ContactHistoryTool
-#from tools.enhanced_pdok_location_tool import IntelligentLocationSearchTool, SpecializedAddressSearchTool
-from tools.enhanced_ai_intelligent_tools import (
-    EnhancedPDOKServiceDiscoveryTool,
-    LocationSearchTool,
-    PDOKDataRequestTool
-)
-
-#from .tools.coordinate_conversion_tool import CoordinateConversionTool
-#from .pdok_intelligent_agent_tool import EnhancedPDOKIntelligentAgent, SmartServiceDiscoveryTool
+from tools.enhanced_pdok_location_tool import IntelligentLocationSearchTool, SpecializedAddressSearchTool
+from .pdok_intelligent_agent_tool import EnhancedPDOKIntelligentAgent, SmartServiceDiscoveryTool
 from .pdok_modular_tools import PDOKLocationSearchTool 
+from tools.coordinate_conversion_tool import CoordinateConversionTool , CreateRDBoundingBoxTool
 # Import the NEW flexible PDOK tools
-# from .pdok_service_discovery_tool import (
-#     PDOKServiceDiscoveryTool,
-#     PDOKDataRequestTool,
-#     PDOKDataFilterTool,
-#     PDOKMapDisplayTool,
-#     PDOKBuildingsFlexibleTool
-# )
+from .pdok_service_discovery_tool import (
+    PDOKServiceDiscoveryTool,
+    PDOKDataRequestTool,
+    PDOKDataFilterTool,
+    PDOKMapDisplayTool,
+    PDOKBuildingsFlexibleTool
+)
 
 
 from tools.ai_intelligent_tools import (
@@ -35,17 +29,28 @@ from tools.ai_intelligent_tools import (
     #PDOKBuildingsRealTool = None
 
 __all__ = [
+    # Location tools
+    "IntelligentLocationSearchTool",
+    "SpecializedAddressSearchTool",
+    "PDOKLocationSearchTool",
 
-    "LocationSearchTool",
+    
 
-    "PDOKDataRequestTool",
-    "EnhancedPDOKServiceDiscoveryTool",
-
-
-    "PDOKServiceDiscoveryTool",
-
-    #"AILocationCoordinatorTool",
-    #"AIDrivenPDOKAgent",
+    "CoordinateConversionTool",
+    "CreateRDBoundingBoxTool",
+    
+    
+    # NEW Flexible PDOK tools
+    #"PDOKServiceDiscoveryTool",
+    #"PDOKDataRequestTool",
+    #"PDOKDataFilterTool", 
+    #"PDOKMapDisplayTool",
+    #"PDOKBuildingsFlexibleTool",
+    "EnhancedPDOKIntelligentAgent",
+    "SmartServiceDiscoveryTool",
+    "IntelligentServiceDiscoveryTool",
+    "AILocationCoordinatorTool",
+    "AIDrivenPDOKAgent",
 ]
 
 # Print info about available tools
