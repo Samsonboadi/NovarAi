@@ -20,7 +20,12 @@ from tools.ai_intelligent_tools import (
     LocationSearchTool,
     PDOKDataRequestTool
 )
-        
+
+
+from tools.flexible_ai_driven_spatial_tools import (
+    FlexibleSpatialDataTool,
+    FlexibleSpatialAnalysisTool    
+)
 # Legacy building tool (deprecated but included for compatibility)
 #try:
     #from .pdok_building_tool import PDOKBuildingsRealTool
@@ -33,6 +38,8 @@ __all__ = [
     "IntelligentLocationSearchTool",
     "SpecializedAddressSearchTool",
     "PDOKLocationSearchTool",
+    "FlexibleSpatialDataTool",
+    "FlexibleSpatialAnalysisTool",
 
     
 

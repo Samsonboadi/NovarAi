@@ -184,68 +184,6 @@ try {
         return null;
     };
 
-
-
-
-    function debugMapFeatures(features) {
-        console.log("=== MAP FEATURES DEBUG ===");
-        console.log("Number of features:", features?.length || 0);
-        
-        if (!features || !Array.isArray(features) || features.length === 0) {
-            console.log("❌ No features to display");
-            return false;
-        }
-        
-        console.log("✅ Features array is valid");
-        
-        // Check first feature
-        const firstFeature = features[0];
-        console.log("First feature:", firstFeature);
-        console.log("First feature type:", typeof firstFeature);
-        console.log("First feature keys:", Object.keys(firstFeature));
-        
-        // Check required fields
-        const requiredFields = ['type', 'name', 'lat', 'lon', 'geometry'];
-        const missingFields = requiredFields.filter(field => !(field in firstFeature));
-        
-        if (missingFields.length > 0) {
-            console.log("❌ Missing required fields:", missingFields);
-            return false;
-        }
-        
-        console.log("✅ All required fields present");
-        
-        // Check coordinates
-        const lat = firstFeature.lat;
-        const lon = firstFeature.lon;
-        console.log("Coordinates:", lat, lon);
-        
-        if (lat === 0 || lon === 0) {
-            console.log("❌ Invalid coordinates (zero values)");
-            return false;
-        }
-        
-        if (lat < 50 || lat > 54 || lon < 3 || lon > 8) {
-            console.log("⚠️ Coordinates outside Netherlands bounds");
-        }
-        
-        // Check geometry
-        const geometry = firstFeature.geometry;
-        console.log("Geometry:", geometry);
-        
-        if (!geometry || !geometry.type || !geometry.coordinates) {
-            console.log("❌ Invalid geometry");
-            return false;
-        }
-        
-        console.log("✅ Geometry is valid");
-        console.log("=========================");
-        
-        return true;
-    }
-
-
-
     // Simple but robust Statistics Component (based on working test)
     const EnhancedMapStatistics = ({ features }) => {
         console.log("EnhancedMapStatistics rendering with features:", features?.length || 0);
@@ -380,21 +318,6 @@ try {
         useEffect(() => {
             scrollToBottom();
         }, [messages]);
-
-        React.useEffect(() => {
-            console.log("🔄 Features state changed:", features.length);
-            if (features.length > 0) {
-                console.log("Features sample:", features[0]);
-                
-                // Check if map needs updating
-                if (mapInstance.current) {
-                    console.log("Map instance available for features update");
-                } else {
-                    console.log("⚠️ Map instance not available when features changed");
-                }
-            }
-        }, [features]);
-
 
         // Debug features whenever they change
         useEffect(() => {
@@ -641,49 +564,7 @@ try {
             }
         };
 
-        const debugUpdateMapFeatures = (data) => {
-            console.log("=== DEBUG updateMapFeatures ===");
-            console.log("Input data:", data);
-            console.log("Data length:", data?.length);
-            console.log("Map instance:", mapInstance.current);
-            
-            if (!mapInstance.current) {
-                console.error("❌ Map instance not available");
-                return;
-            }
-            
-            console.log("Map layers before update:", mapInstance.current.getLayers().getLength());
-            
-            // Check if there are existing vector layers
-            const vectorLayers = [];
-            mapInstance.current.getLayers().forEach(layer => {
-                if (layer instanceof ol.layer.Vector) {
-                    vectorLayers.push(layer);
-                }
-            });
-            console.log("Existing vector layers:", vectorLayers.length);
-            
-            // Call the original updateMapFeatures
-            updateMapFeatures(data);
-            
-            // Check layers after update
-            setTimeout(() => {
-                console.log("Map layers after update:", mapInstance.current.getLayers().getLength());
-                const newVectorLayers = [];
-                mapInstance.current.getLayers().forEach(layer => {
-                    if (layer instanceof ol.layer.Vector) {
-                        newVectorLayers.push(layer);
-                        console.log("Vector layer features:", layer.getSource().getFeatures().length);
-                    }
-                });
-                console.log("Vector layers after update:", newVectorLayers.length);
-            }, 100);
-            
-            console.log("===============================");
-        };
-
-
-        // Enhanced handleQuery with comprehensive debugging
+        // Enhanced chat query handler
         const handleQuery = async () => {
             if (!query.trim()) return;
             
@@ -725,36 +606,14 @@ try {
                     responseContent = data.response;
                     const geojsonData = data.geojson_data;
                     
-                    // ENHANCED DEBUG: Log detailed information about the received data
-                    console.log("=== GEOJSON DATA DEBUG ===");
-                    console.log("Type:", typeof geojsonData);
-                    console.log("Is Array:", Array.isArray(geojsonData));
-                    console.log("Length:", geojsonData?.length);
-                    
                     if (Array.isArray(geojsonData) && geojsonData.length > 0) {
                         const firstItem = geojsonData[0];
-                        console.log("First item:", firstItem);
-                        console.log("First item keys:", Object.keys(firstItem));
-                        console.log("Has required fields:", {
-                            name: 'name' in firstItem,
-                            lat: 'lat' in firstItem,
-                            lon: 'lon' in firstItem,
-                            geometry: 'geometry' in firstItem,
-                            type: 'type' in firstItem
-                        });
-                        console.log("Coordinates:", {
-                            lat: firstItem.lat,
-                            lon: firstItem.lon,
-                            nonZero: firstItem.lat !== 0 && firstItem.lon !== 0
-                        });
-                        console.log("Geometry:", firstItem.geometry);
                         
                         if (firstItem && typeof firstItem === 'object' && 
                             'name' in firstItem && 'lat' in firstItem && 'lon' in firstItem && 
                             'geometry' in firstItem && firstItem.lat !== 0 && firstItem.lon !== 0) {
                             
                             console.log("✓ Valid building data - updating map and components");
-                            console.log("Current features count before update:", features.length);
                             
                             // Extract search location
                             const responseText = data.response || '';
@@ -784,50 +643,11 @@ try {
                             }
                             
                             console.log("Setting features for legend and statistics:", geojsonData.length);
-                            
-                            // DEBUG: Test if setFeatures actually works
-                            console.log("About to call setFeatures...");
                             setFeatures(geojsonData);
-                            console.log("setFeatures called");
-                            
-                            // DEBUG: Add a small delay to see if state updates
-                            setTimeout(() => {
-                                console.log("Features after setFeatures (delayed check):", features.length);
-                            }, 100);
-                            
-                            // DEBUG: Test updateMapFeatures
-                            console.log("About to call updateMapFeatures...");
-                            console.log("Map instance available:", !!mapInstance.current);
-                            
-                            if (mapInstance.current) {
-                                console.log("Map instance exists, calling updateMapFeatures");
-                                updateMapFeatures(geojsonData);
-                                console.log("updateMapFeatures called");
-                            } else {
-                                console.error("❌ Map instance not available!");
-                            }
-                            
+                            updateMapFeatures(geojsonData);
                             foundBuildings = true;
-                        } else {
-                            console.log("❌ Invalid building data structure");
-                            console.log("Validation failed:", {
-                                isObject: typeof firstItem === 'object',
-                                hasName: 'name' in firstItem,
-                                hasLat: 'lat' in firstItem,
-                                hasLon: 'lon' in firstItem,
-                                hasGeometry: 'geometry' in firstItem,
-                                nonZeroLat: firstItem.lat !== 0,
-                                nonZeroLon: firstItem.lon !== 0
-                            });
                         }
-                    } else {
-                        console.log("❌ Invalid geojsonData:", {
-                            isArray: Array.isArray(geojsonData),
-                            length: geojsonData?.length,
-                            data: geojsonData
-                        });
                     }
-                    console.log("=========================");
                 }
                 // Handle other response formats...
                 else if (Array.isArray(data) && data.length > 0) {
