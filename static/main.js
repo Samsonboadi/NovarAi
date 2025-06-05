@@ -1,5 +1,5 @@
-//static/main.js - Enhanced with Flexible Legends and Location Plotting
-console.log("Loading ENHANCED Production Map-Aware PDOK Chat Assistant");
+//static/main.js - Improved with Better Location Pin Handling
+console.log("Loading INTELLIGENT Production Map-Aware PDOK Chat Assistant");
 
 try {
     const { useState, useEffect, useRef, useCallback } = React;
@@ -7,12 +7,130 @@ try {
     const container = document.getElementById('root');
     const root = ReactDOM.createRoot ? ReactDOM.createRoot(container) : null;
 
-    // ENHANCED: Flexible Legend Component that uses backend data
-    const FlexibleLegend = ({ legendData }) => {
-        console.log("FlexibleLegend rendering with data:", legendData);
+    // IMPROVED: Better Location Pin Component
+    const IntelligentLocationPin = ({ searchLocation, mapInstance, locationPinRef }) => {
+        useEffect(() => {
+            console.log("🔍 IntelligentLocationPin effect:", searchLocation);
+            
+            if (searchLocation && locationPinRef.current && mapInstance.current) {
+                console.log(`📍 Creating location pin: ${searchLocation.name} at ${searchLocation.lat}, ${searchLocation.lon}`);
+                
+                // Validate coordinates
+                const lat = parseFloat(searchLocation.lat);
+                const lon = parseFloat(searchLocation.lon);
+                
+                if (isNaN(lat) || isNaN(lon)) {
+                    console.error("❌ Invalid coordinates for location pin:", searchLocation);
+                    return;
+                }
+                
+                // Check Netherlands bounds
+                if (lat < 50 || lat > 54 || lon < 3 || lon > 8) {
+                    console.warn("⚠️ Coordinates outside Netherlands bounds:", lat, lon);
+                }
+                
+                // Create enhanced pin element
+                const pinContainer = document.createElement('div');
+                pinContainer.style.cssText = `
+                    pointer-events: none;
+                    z-index: 1001;
+                    position: relative;
+                `;
+                
+                // Determine pin color based on source
+                const pinColor = searchLocation.source === 'response_coordinates' ? '#ef4444' : 
+                               searchLocation.source === 'feature_centroid' ? '#f59e0b' : '#ef4444';
+                
+                pinContainer.innerHTML = `
+                    <div style="
+                        display: flex;
+                        flex-direction: column;
+                        align-items: center;
+                        animation: pinDrop 0.8s ease-out;
+                    ">
+                        <div style="
+                            position: relative;
+                            width: 40px;
+                            height: 40px;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            background: linear-gradient(135deg, ${pinColor} 0%, ${pinColor}dd 100%);
+                            border-radius: 50% 50% 50% 0;
+                            transform: rotate(-45deg);
+                            box-shadow: 0 8px 16px rgba(239, 68, 68, 0.4);
+                            border: 3px solid white;
+                        ">
+                            <div style="
+                                transform: rotate(45deg);
+                                font-size: 18px;
+                                color: white;
+                                font-weight: bold;
+                            ">📍</div>
+                            <div style="
+                                position: absolute;
+                                top: -5px;
+                                left: -5px;
+                                right: -5px;
+                                bottom: -5px;
+                                border: 2px solid ${pinColor};
+                                border-radius: 50% 50% 50% 0;
+                                animation: pinPulse 2s infinite;
+                                opacity: 0.6;
+                            "></div>
+                        </div>
+                        <div style="
+                            margin-top: 8px;
+                            background: rgba(239, 68, 68, 0.95);
+                            color: white;
+                            padding: 6px 10px;
+                            border-radius: 14px;
+                            font-size: 11px;
+                            font-weight: 600;
+                            white-space: nowrap;
+                            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+                            max-width: 150px;
+                            overflow: hidden;
+                            text-overflow: ellipsis;
+                            text-align: center;
+                        ">${searchLocation.name || 'Search Location'}</div>
+                    </div>
+                `;
+                
+                // Update the overlay element
+                locationPinRef.current.setElement(pinContainer);
+                
+                // Set position
+                const pinCoords = ol.proj.fromLonLat([lon, lat]);
+                locationPinRef.current.setPosition(pinCoords);
+                
+                console.log(`✅ Location pin positioned at: ${pinCoords}`);
+                
+                // Center map on location with smooth animation
+                const currentZoom = mapInstance.current.getView().getZoom();
+                const targetZoom = Math.max(currentZoom, 12);
+                
+                mapInstance.current.getView().animate({
+                    center: pinCoords,
+                    zoom: targetZoom,
+                    duration: 1200
+                });
+                
+                console.log(`🎯 Map centered on location with zoom ${targetZoom}`);
+                
+            } else if (locationPinRef.current) {
+                // Hide pin if no search location
+                console.log("🚫 Hiding location pin");
+                locationPinRef.current.setPosition(undefined);
+            }
+        }, [searchLocation, mapInstance, locationPinRef]);
         
+        return null;
+    };
+
+    // IMPROVED: Enhanced Flexible Legend
+    const FlexibleLegend = ({ legendData }) => {
         if (!legendData || !legendData.categories || legendData.categories.length === 0) {
-            console.log("FlexibleLegend: No legend data to display");
             return null;
         }
         
@@ -31,12 +149,10 @@ try {
             backdropFilter: 'blur(10px)'
         };
         
-        console.log("Rendering flexible legend:", legendData.title);
-        
         return React.createElement('div', {
             style: legendStyle
         }, [
-            // Title
+            // Title with icon
             React.createElement('div', {
                 key: 'title',
                 style: { 
@@ -90,8 +206,6 @@ try {
                         }
                     }, [
                         category.count && React.createElement('span', { key: 'count' }, category.count),
-                        category.area_ha && React.createElement('span', { key: 'area' }, ` (${category.area_ha}ha)`),
-                        category.percentage && React.createElement('span', { key: 'percentage' }, ` ${category.percentage}%`),
                         category.range && React.createElement('span', { key: 'range' }, category.range)
                     ])
                 ])
@@ -107,114 +221,15 @@ try {
                     paddingTop: '8px', 
                     borderTop: '1px solid #e5e7eb'
                 }
-            }, [
-                legendData.statistics.total_features && React.createElement('div', { key: 'total' }, 
-                    `Total: ${legendData.statistics.total_features} features`),
-                legendData.statistics.total_area_ha && React.createElement('div', { key: 'total_area' }, 
-                    `Area: ${legendData.statistics.total_area_ha}ha`),
-                legendData.statistics.classifications && React.createElement('div', { key: 'classifications' }, 
-                    `Types: ${legendData.statistics.classifications}`),
-                legendData.layer_type && React.createElement('div', { key: 'source', style: { fontStyle: 'italic', marginTop: '4px' } }, 
-                    `Source: ${legendData.layer_type}`)
-            ])
+            }, Object.entries(legendData.statistics).map(([key, value], index) => 
+                React.createElement('div', { key: `stat-${index}` }, 
+                    `${key.replace(/_/g, ' ')}: ${value}`)
+            ))
         ]);
     };
 
-    // ENHANCED: Location Pin Component with better styling
-    const LocationPin = ({ searchLocation, mapInstance, locationPinRef }) => {
-        useEffect(() => {
-            if (searchLocation && locationPinRef.current && mapInstance.current) {
-                console.log(`📍 Displaying location pin: ${searchLocation.name} at ${searchLocation.lat}, ${searchLocation.lon}`);
-                
-                // Create enhanced pin element
-                const pinContainer = document.createElement('div');
-                pinContainer.style.cssText = `
-                    pointer-events: none;
-                    z-index: 1001;
-                `;
-                
-                pinContainer.innerHTML = `
-                    <div style="
-                        display: flex;
-                        flex-direction: column;
-                        align-items: center;
-                        animation: pinDrop 0.6s ease-out;
-                    ">
-                        <div style="
-                            position: relative;
-                            width: 40px;
-                            height: 40px;
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
-                            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-                            border-radius: 50% 50% 50% 0;
-                            transform: rotate(-45deg);
-                            box-shadow: 0 8px 16px rgba(239, 68, 68, 0.4);
-                            border: 3px solid white;
-                        ">
-                            <div style="
-                                transform: rotate(45deg);
-                                font-size: 18px;
-                                color: white;
-                                font-weight: bold;
-                            ">📍</div>
-                            <div style="
-                                position: absolute;
-                                top: -5px;
-                                left: -5px;
-                                right: -5px;
-                                bottom: -5px;
-                                border: 2px solid #ef4444;
-                                border-radius: 50% 50% 50% 0;
-                                animation: pinPulse 2s infinite;
-                                opacity: 0.6;
-                            "></div>
-                        </div>
-                        <div style="
-                            margin-top: 8px;
-                            background: rgba(239, 68, 68, 0.9);
-                            color: white;
-                            padding: 4px 8px;
-                            border-radius: 12px;
-                            font-size: 11px;
-                            font-weight: 600;
-                            white-space: nowrap;
-                            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-                            max-width: 120px;
-                            overflow: hidden;
-                            text-overflow: ellipsis;
-                        ">${searchLocation.name || 'Search Location'}</div>
-                    </div>
-                `;
-                
-                // Update the overlay element
-                locationPinRef.current.setElement(pinContainer);
-                
-                const pinCoords = ol.proj.fromLonLat([searchLocation.lon, searchLocation.lat]);
-                locationPinRef.current.setPosition(pinCoords);
-                
-                // Optionally center map on location (with animation)
-                if (searchLocation.center_map !== false) {
-                    mapInstance.current.getView().animate({
-                        center: pinCoords,
-                        duration: 1000,
-                        zoom: Math.max(mapInstance.current.getView().getZoom(), 12)
-                    });
-                }
-            } else if (locationPinRef.current) {
-                // Hide pin if no search location
-                locationPinRef.current.setPosition(undefined);
-            }
-        }, [searchLocation, mapInstance, locationPinRef]);
-        
-        return null; // This component doesn't render anything directly
-    };
-
-    // ENHANCED: Smart Statistics Component that adapts to layer type
-    const AdaptiveStatistics = ({ features, legendData, layerType }) => {
-        console.log("AdaptiveStatistics rendering:", { features: features?.length, layerType, legendData: !!legendData });
-        
+    // IMPROVED: Smart Statistics Component
+    const SmartStatistics = ({ features, legendData, layerType, searchLocation }) => {
         if (!features || !Array.isArray(features) || features.length === 0) {
             return null;
         }
@@ -234,8 +249,12 @@ try {
             backdropFilter: 'blur(10px)'
         };
         
-        // Use legend data statistics if available, otherwise compute our own
-        const displayStats = legendData?.statistics || {};
+        // Generate smart statistics based on layer type
+        const layerTitle = layerType === 'land_use' ? 'Land Use' :
+                          layerType === 'buildings' ? 'Buildings' :
+                          layerType === 'parcels' ? 'Parcels' :
+                          layerType === 'environmental' ? 'Protected Areas' :
+                          'Features';
         
         return React.createElement('div', {
             style: statsStyle
@@ -243,30 +262,24 @@ try {
             React.createElement('div', {
                 key: 'title',
                 style: { fontSize: '12px', fontWeight: 'bold', marginBottom: '4px', color: '#1f2937' }
-            }, `📊 ${layerType === 'land_use' ? 'Land Use' : layerType === 'buildings' ? 'Buildings' : layerType === 'parcels' ? 'Parcels' : layerType === 'environmental' ? 'Protected Areas' : 'Features'} Analysis`),
+            }, `📊 ${layerTitle} Analysis`),
             
             React.createElement('div', {
                 key: 'count',
-                style: { fontSize: '11px', color: '#4b5563', marginBottom: '8px' }
-            }, `${features.length} features displayed`),
+                style: { fontSize: '11px', color: '#4b5563', marginBottom: '6px' }
+            }, `${features.length} features found`),
             
-            // Dynamic statistics based on legend data
-            ...(Object.entries(displayStats).map(([key, value], index) => {
-                if (key === 'total_features') return null; // Already shown above
+            // Location info
+            searchLocation && React.createElement('div', {
+                key: 'location',
+                style: { fontSize: '10px', color: '#6b7280', marginBottom: '6px' }
+            }, `📍 Near: ${searchLocation.name}`),
+            
+            // Legend statistics
+            legendData && legendData.statistics && Object.entries(legendData.statistics).map(([key, value], index) => {
+                if (key === 'total_features') return null;
                 
                 let label = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-                let displayValue = value;
-                
-                // Format specific statistics
-                if (key.includes('area') && typeof value === 'number') {
-                    displayValue = `${value}ha`;
-                } else if (key.includes('year') && typeof value === 'number') {
-                    displayValue = value.toString();
-                } else if (key.includes('range')) {
-                    label = 'Range';
-                } else if (key === 'classifications' || key === 'area_types' || key === 'boundary_types') {
-                    label = 'Categories';
-                }
                 
                 return React.createElement('div', {
                     key: `stat-${index}`,
@@ -278,88 +291,35 @@ try {
                         marginBottom: '2px'
                     }
                 }, [
-                    React.createElement('span', { key: 'label', style: { fontWeight: '500' } }, label + ':'),
-                    React.createElement('span', { key: 'value' }, displayValue)
+                    React.createElement('span', { key: 'label' }, label + ':'),
+                    React.createElement('span', { key: 'value' }, value)
                 ]);
-            }).filter(Boolean)),
+            }).filter(Boolean),
             
             // Layer type indicator
-            layerType && React.createElement('div', {
+            React.createElement('div', {
                 key: 'layer-type',
                 style: { 
                     fontSize: '9px', 
                     color: '#9ca3af', 
                     marginTop: '8px', 
-                    paddingTop: '8px', 
+                    paddingTop: '6px', 
                     borderTop: '1px solid #e5e7eb',
                     fontStyle: 'italic'
                 }
-            }, `Data type: ${layerType}`)
+            }, `Source: ${layerType}`)
         ]);
     };
 
-    function debugMapFeatures(features) {
-        console.log("=== MAP FEATURES DEBUG ===");
-        console.log("Number of features:", features?.length || 0);
-        
-        if (!features || !Array.isArray(features) || features.length === 0) {
-            console.log("❌ No features to display");
-            return false;
-        }
-        
-        console.log("✅ Features array is valid");
-        
-        const firstFeature = features[0];
-        console.log("First feature:", firstFeature);
-        console.log("First feature type:", typeof firstFeature);
-        console.log("First feature keys:", Object.keys(firstFeature));
-        
-        const requiredFields = ['type', 'name', 'lat', 'lon', 'geometry'];
-        const missingFields = requiredFields.filter(field => !(field in firstFeature));
-        
-        if (missingFields.length > 0) {
-            console.log("❌ Missing required fields:", missingFields);
-            return false;
-        }
-        
-        console.log("✅ All required fields present");
-        
-        const lat = firstFeature.lat;
-        const lon = firstFeature.lon;
-        console.log("Coordinates:", lat, lon);
-        
-        if (lat === 0 || lon === 0) {
-            console.log("❌ Invalid coordinates (zero values)");
-            return false;
-        }
-        
-        if (lat < 50 || lat > 54 || lon < 3 || lon > 8) {
-            console.log("⚠️ Coordinates outside Netherlands bounds");
-        }
-        
-        const geometry = firstFeature.geometry;
-        console.log("Geometry:", geometry);
-        
-        if (!geometry || !geometry.type || !geometry.coordinates) {
-            console.log("❌ Invalid geometry");
-            return false;
-        }
-        
-        console.log("✅ Geometry is valid");
-        console.log("=========================");
-        
-        return true;
-    }
-
     const App = () => {
-        console.log("Initializing ENHANCED Production Map component");
+        console.log("Initializing INTELLIGENT Map component");
         
-        // ENHANCED State management
+        // State management
         const [query, setQuery] = useState('');
         const [messages, setMessages] = useState([
             {
                 type: 'assistant',
-                content: 'Hello! I\'m your enhanced map-aware AI Agent.\nI can help you explore different types of spatial data with flexible legends and location pins.\n\n🌾 Try asking:\n"Analyze agricultural land distribution in Utrecht province"\n\n🏠 Or:\n"Show me buildings near Leonard Springerlaan 37, Groningen"\n\n📐 Or:\n"Find large parcels suitable for development in Groningen"',
+                content: 'Hello! I\'m your intelligent PDOK assistant.\n\n🧠 I can analyze your queries and provide spatial data efficiently.\n\n📍 Location pins are automatically plotted when you mention places!\n\nTry asking:\n"Show agricultural land in Utrecht province"\n"Buildings near Amsterdam Centraal"\n"Large parcels in Groningen"',
                 timestamp: new Date()
             }
         ]);
@@ -370,11 +330,11 @@ try {
         const [mapCenter, setMapCenter] = useState([5.2913, 52.1326]);
         const [mapZoom, setMapZoom] = useState(8);
         
-        // ENHANCED: New state for flexible legend and location
+        // IMPROVED: Enhanced state for intelligent features
         const [searchLocation, setSearchLocation] = useState(null);
         const [legendData, setLegendData] = useState(null);
         const [layerType, setLayerType] = useState(null);
-        const [analysisStatus, setAnalysisStatus] = useState(null);
+        const [processingStatus, setProcessingStatus] = useState('ready');
         
         // Refs
         const mapRef = useRef(null);
@@ -383,7 +343,7 @@ try {
         const messagesEndRef = useRef(null);
         const locationPinRef = useRef(null);
 
-        // Auto-scroll to bottom of messages
+        // Auto-scroll messages
         const scrollToBottom = () => {
             messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
         };
@@ -392,19 +352,21 @@ try {
             scrollToBottom();
         }, [messages]);
 
-        // ENHANCED: Debug state changes
-        React.useEffect(() => {
-            console.log("🔄 State changed:", {
+        // IMPROVED: Debug state changes
+        useEffect(() => {
+            console.log("🔄 Intelligent state update:", {
                 features: features.length,
+                searchLocation: searchLocation?.name,
                 legendData: !!legendData,
                 layerType,
-                searchLocation: !!searchLocation
+                processingStatus
             });
-        }, [features, legendData, layerType, searchLocation]);
+        }, [features, searchLocation, legendData, layerType, processingStatus]);
 
         // Initialize OpenLayers map
         useEffect(() => {
-            console.log("Setting up OpenLayers map");
+            console.log("🗺️ Setting up intelligent OpenLayers map");
+            
             try {
                 // Base layers
                 const osmLayer = new ol.layer.Tile({
@@ -420,11 +382,6 @@ try {
                     visible: mapView === 'satellite'
                 });
 
-                const controls = [
-                    new ol.control.Zoom(),
-                    new ol.control.Attribution()
-                ];
-
                 mapInstance.current = new ol.Map({
                     target: mapRef.current,
                     layers: [osmLayer, satelliteLayer],
@@ -432,10 +389,13 @@ try {
                         center: ol.proj.fromLonLat(mapCenter),
                         zoom: mapZoom
                     }),
-                    controls: controls
+                    controls: [
+                        new ol.control.Zoom(),
+                        new ol.control.Attribution()
+                    ]
                 });
 
-                // Map movement listeners
+                // Map event listeners
                 mapInstance.current.getView().on('change:center', () => {
                     const center = ol.proj.toLonLat(mapInstance.current.getView().getCenter());
                     setMapCenter(center);
@@ -447,26 +407,26 @@ try {
                 });
 
                 // Popup setup
-                const container = document.createElement('div');
-                container.className = 'ol-popup';
-                const content = document.createElement('div');
-                content.id = 'popup-content';
-                container.appendChild(content);
-                const closer = document.createElement('a');
-                closer.className = 'ol-popup-closer';
-                closer.href = '#';
-                closer.innerHTML = '×';
-                container.appendChild(closer);
+                const popupContainer = document.createElement('div');
+                popupContainer.className = 'ol-popup';
+                const popupContent = document.createElement('div');
+                popupContent.id = 'popup-content';
+                popupContainer.appendChild(popupContent);
+                const popupCloser = document.createElement('a');
+                popupCloser.className = 'ol-popup-closer';
+                popupCloser.href = '#';
+                popupCloser.innerHTML = '×';
+                popupContainer.appendChild(popupCloser);
 
                 overlayRef.current = new ol.Overlay({
-                    element: container,
+                    element: popupContainer,
                     autoPan: {
                         animation: { duration: 250 }
                     }
                 });
                 mapInstance.current.addOverlay(overlayRef.current);
 
-                // ENHANCED: Initialize location pin overlay (empty initially)
+                // IMPROVED: Initialize location pin overlay
                 locationPinRef.current = new ol.Overlay({
                     positioning: 'bottom-center',
                     stopEvent: false,
@@ -474,13 +434,13 @@ try {
                 });
                 mapInstance.current.addOverlay(locationPinRef.current);
 
-                closer.onclick = () => {
+                popupCloser.onclick = () => {
                     overlayRef.current.setPosition(undefined);
-                    closer.blur();
+                    popupCloser.blur();
                     return false;
                 };
 
-                // ENHANCED: Click handler with flexible popup content
+                // Enhanced click handler
                 mapInstance.current.on('singleclick', (evt) => {
                     const feature = mapInstance.current.forEachFeatureAtPixel(evt.pixel, f => f);
                     if (feature) {
@@ -497,78 +457,21 @@ try {
                         }
                         
                         const props = feature.get('properties') || {};
-                        const name = feature.get('name') || 'Unknown Feature';
+                        const name = feature.get('name') || 'Feature';
                         const description = feature.get('description') || '';
                         const lonLat = ol.proj.toLonLat(coordinates);
                         
-                        // ENHANCED: Flexible popup content based on layer type
+                        // Intelligent popup content based on layer type
                         let popupContent = `
-                            <div class="space-y-3">
-                                <h3 class="text-lg font-semibold text-gray-800">${name}</h3>
-                                <div class="text-sm text-gray-600">
-                                    <p><span class="font-medium">Type:</span> ${geom.getType()}</p>
+                            <div class="space-y-2">
+                                <h3 class="text-sm font-semibold text-gray-800">${name}</h3>
+                                <div class="text-xs text-gray-600">
                                     <p><span class="font-medium">Coordinates:</span> ${lonLat[1].toFixed(6)}, ${lonLat[0].toFixed(6)}</p>
-                                    ${description ? `<p class="mt-2">${description}</p>` : ''}
+                                    ${description ? `<p class="mt-1">${description}</p>` : ''}
+                                </div>
+                            </div>
                         `;
                         
-                        // Dynamic content based on layer type
-                        if (layerType === 'buildings') {
-                            // Building-specific information
-                            if (props.bouwjaar) {
-                                const year = props.bouwjaar;
-                                let era = 'Unknown';
-                                if (year < 1900) era = 'Historic (pre-1900)';
-                                else if (year < 1950) era = 'Early Modern (1900-1950)';
-                                else if (year < 2000) era = 'Mid-Century (1950-2000)';
-                                else era = 'Contemporary (2000+)';
-                                
-                                popupContent += `<p><span class="font-medium">Built:</span> ${year} (${era})</p>`;
-                            }
-                            
-                            const area = props.area_m2 || props.oppervlakte_max || props.oppervlakte_min;
-                            if (area && area > 0) {
-                                popupContent += `<p><span class="font-medium">Area:</span> ${Math.round(area).toLocaleString()}m²</p>`;
-                            }
-                        } else if (layerType === 'land_use') {
-                            // Land use information
-                            if (props.bgb2015_hoofdklasse_label || props.hoofdklasse || props.bodemgebruik) {
-                                const landUse = props.bgb2015_hoofdklasse_label || props.hoofdklasse || props.bodemgebruik;
-                                popupContent += `<p><span class="font-medium">Land Use:</span> ${landUse}</p>`;
-                            }
-                            
-                            if (props.shape_area && props.shape_area > 0) {
-                                const areaHa = props.shape_area / 10000;
-                                popupContent += `<p><span class="font-medium">Area:</span> ${areaHa.toFixed(1)}ha</p>`;
-                            }
-                        } else if (layerType === 'parcels') {
-                            // Parcel information
-                            if (props.perceelnummer) {
-                                popupContent += `<p><span class="font-medium">Parcel Number:</span> ${props.perceelnummer}</p>`;
-                            }
-                            
-                            if (props.kadastraleGrootteWaarde && props.kadastraleGrootteWaarde > 0) {
-                                const areaHa = props.kadastraleGrootteWaarde / 10000;
-                                popupContent += `<p><span class="font-medium">Area:</span> ${areaHa.toFixed(2)}ha</p>`;
-                            }
-                        } else if (layerType === 'environmental') {
-                            // Environmental/nature information
-                            if (props.gebiedsnaam || props.naam) {
-                                const areaName = props.gebiedsnaam || props.naam;
-                                popupContent += `<p><span class="font-medium">Area Name:</span> ${areaName}</p>`;
-                            }
-                            
-                            if (props.type_gebied) {
-                                popupContent += `<p><span class="font-medium">Protection Type:</span> ${props.type_gebied}</p>`;
-                            }
-                        }
-                        
-                        // Distance information (common to all types)
-                        const distance = props.distance_km;
-                        if (distance && distance > 0) {
-                            popupContent += `<p><span class="font-medium">Distance:</span> ${distance.toFixed(3)}km from search location</p>`;
-                        }
-                        
-                        popupContent += '</div></div>';
                         document.getElementById('popup-content').innerHTML = popupContent;
                         overlayRef.current.setPosition(coordinates);
                     } else {
@@ -576,7 +479,7 @@ try {
                     }
                 });
 
-                console.log("✅ Enhanced map setup complete");
+                console.log("✅ Intelligent map setup complete");
 
                 return () => {
                     if (mapInstance.current) {
@@ -584,11 +487,11 @@ try {
                     }
                 };
             } catch (error) {
-                console.error("Error setting up map:", error);
+                console.error("❌ Error setting up map:", error);
             }
         }, [mapView]);
 
-        // Switch between map views
+        // Switch map views
         const switchMapView = (view) => {
             setMapView(view);
             if (mapInstance.current) {
@@ -602,7 +505,7 @@ try {
             }
         };
 
-        // ENHANCED: handleQuery with flexible legend and location support
+        // IMPROVED: Intelligent query handling
         const handleQuery = async () => {
             if (!query.trim()) return;
             
@@ -614,92 +517,86 @@ try {
             
             setMessages(prev => [...prev, userMessage]);
             setIsLoading(true);
-            setAnalysisStatus('processing');
+            setProcessingStatus('analyzing');
             const currentQuery = query;
             setQuery('');
 
             try {
-                console.log("🚀 Sending enhanced query to backend:", currentQuery);
+                console.log("🧠 Sending intelligent query:", currentQuery);
                 
                 const res = await fetch('/api/query', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ 
-                        query: currentQuery, 
-                        current_features: features,
-                        map_center: mapCenter,
-                        map_zoom: mapZoom
+                        query: currentQuery
                     })
                 });
                 
                 const data = await res.json();
-                console.log("📦 Received enhanced data from backend:", data);
+                console.log("🎯 Received intelligent response:", data);
+                
+                setProcessingStatus('processing');
                 
                 let responseContent = '';
                 let foundFeatures = false;
                 
-                // ENHANCED: Handle backend response with flexible legend and location data
                 if (data && typeof data === 'object') {
-                    console.log("✅ Processing enhanced response format");
-                    
                     responseContent = data.response || data.message || 'Analysis completed.';
                     
-                    // Extract features
-                    const geojsonData = data.geojson_data || data.features || data.data;
+                    // Extract and validate features
+                    const geojsonData = data.geojson_data || [];
+                    console.log(`📦 Processing ${geojsonData.length} features`);
                     
-                    // Extract legend data
-                    const backendLegendData = data.legend_data;
-                    const backendLayerType = data.layer_type;
-                    
-                    // Extract search location
-                    const backendSearchLocation = data.search_location;
-                    
-                    console.log("🔍 Enhanced data components:", {
-                        features: geojsonData?.length,
-                        legendData: !!backendLegendData,
-                        layerType: backendLayerType,
-                        searchLocation: !!backendSearchLocation
+                    // Validate features
+                    const validFeatures = geojsonData.filter(feature => {
+                        return feature && 
+                               typeof feature === 'object' && 
+                               'lat' in feature && 
+                               'lon' in feature && 
+                               feature.lat !== 0 && 
+                               feature.lon !== 0 &&
+                               feature.lat >= 50 && feature.lat <= 54 &&
+                               feature.lon >= 3 && feature.lon <= 8;
                     });
                     
-                    // Process features
-                    if (Array.isArray(geojsonData) && geojsonData.length > 0) {
-                        const firstItem = geojsonData[0];
+                    console.log(`✅ ${validFeatures.length} valid features after validation`);
+                    
+                    if (validFeatures.length > 0) {
+                        setFeatures(validFeatures);
+                        setLayerType(data.layer_type || 'unknown');
+                        setLegendData(data.legend_data);
+                        setProcessingStatus('success');
+                        foundFeatures = true;
                         
-                        if (firstItem && typeof firstItem === 'object' && 
-                            'name' in firstItem && 'lat' in firstItem && 'lon' in firstItem && 
-                            'geometry' in firstItem && firstItem.lat !== 0 && firstItem.lon !== 0) {
-                            
-                            console.log("✅ Valid feature data - updating enhanced components");
-                            
-                            // Update all state
-                            setFeatures(geojsonData);
-                            setLegendData(backendLegendData);
-                            setLayerType(backendLayerType);
-                            setSearchLocation(backendSearchLocation);
-                            setAnalysisStatus('success');
-                            
-                            // Update map
-                            updateMapFeatures(geojsonData, backendLayerType);
-                            
-                            foundFeatures = true;
-                            
-                            console.log("🎯 Enhanced state updated:", {
-                                features: geojsonData.length,
-                                legendTitle: backendLegendData?.title,
-                                layerType: backendLayerType,
-                                searchLocationName: backendSearchLocation?.name
-                            });
-                        } else {
-                            console.log("❌ Invalid feature data structure");
-                            setAnalysisStatus('error');
-                        }
-                    } else if (data.error) {
-                        responseContent = `I encountered an issue: ${data.error}`;
-                        setAnalysisStatus('error');
-                    } else {
-                        console.log("📝 Text-only response received");
-                        setAnalysisStatus('text_response');
+                        // Update map with features
+                        updateMapFeatures(validFeatures, data.layer_type);
                     }
+                    
+                    // IMPROVED: Always handle search location
+                    const backendSearchLocation = data.search_location;
+                    if (backendSearchLocation && 
+                        backendSearchLocation.lat && 
+                        backendSearchLocation.lon &&
+                        backendSearchLocation.lat !== 0 && 
+                        backendSearchLocation.lon !== 0) {
+                        
+                        console.log("📍 Setting search location from backend:", backendSearchLocation);
+                        setSearchLocation(backendSearchLocation);
+                    } else {
+                        // Try to extract location from query text
+                        console.log("🔍 Trying to extract location from response");
+                        const extractedLocation = extractLocationFromQuery(currentQuery, validFeatures);
+                        if (extractedLocation) {
+                            console.log("📍 Setting extracted location:", extractedLocation);
+                            setSearchLocation(extractedLocation);
+                        }
+                    }
+                    
+                } else if (data.error) {
+                    responseContent = `I encountered an issue: ${data.error}`;
+                    setProcessingStatus('error');
+                } else {
+                    setProcessingStatus('completed');
                 }
                 
                 const assistantMessage = {
@@ -711,8 +608,8 @@ try {
                 setMessages(prev => [...prev, assistantMessage]);
                 
             } catch (error) {
-                console.error("❌ Enhanced query error:", error);
-                setAnalysisStatus('error');
+                console.error("❌ Intelligent query error:", error);
+                setProcessingStatus('error');
                 
                 const errorMessage = {
                     type: 'assistant',
@@ -722,13 +619,46 @@ try {
                 setMessages(prev => [...prev, errorMessage]);
             } finally {
                 setIsLoading(false);
+                setTimeout(() => setProcessingStatus('ready'), 2000);
             }
         };
 
-        // ENHANCED: Map features update with flexible styling
+        // IMPROVED: Extract location from query text as fallback
+        const extractLocationFromQuery = (queryText, features) => {
+            const locationPatterns = [
+                /(?:in|near|around|at)\s+([A-Za-z][A-Za-z\s]+?)(?:\s|$|,|\.|province)/i,
+                /([A-Za-z]+(?:\s+[A-Za-z]+)*)\s+(?:province|area|city)/i
+            ];
+            
+            for (const pattern of locationPatterns) {
+                const match = queryText.match(pattern);
+                if (match) {
+                    const locationName = match[1].trim();
+                    
+                    // If we have features, use their centroid
+                    if (features && features.length > 0) {
+                        const lats = features.map(f => f.lat).filter(lat => lat);
+                        const lons = features.map(f => f.lon).filter(lon => lon);
+                        
+                        if (lats.length > 0 && lons.length > 0) {
+                            return {
+                                lat: lats.reduce((a, b) => a + b) / lats.length,
+                                lon: lons.reduce((a, b) => a + b) / lons.length,
+                                name: locationName,
+                                source: 'query_extraction'
+                            };
+                        }
+                    }
+                }
+            }
+            
+            return null;
+        };
+
+        // Update map features with intelligent styling
         const updateMapFeatures = (data, dataLayerType) => {
             if (!mapInstance.current) {
-                console.error("Map instance not available");
+                console.error("❌ Map instance not available");
                 return;
             }
 
@@ -756,49 +686,14 @@ try {
             data.forEach((f, index) => {
                 try {
                     if (!f.geometry || !f.lat || !f.lon || f.lat === 0 || f.lon === 0) {
-                        console.warn(`Skipping feature ${index + 1}: invalid data`);
+                        console.warn(`⚠️ Skipping feature ${index + 1}: invalid data`);
                         return;
                     }
                     
                     let geom;
                     try {
+                        // Process geometry
                         let processedGeometry = JSON.parse(JSON.stringify(f.geometry));
-                        
-                        if (processedGeometry.coordinates) {
-                            function ensureArrays(obj) {
-                                if (obj === null || obj === undefined) return obj;
-                                if (typeof obj === 'number') return obj;
-                                
-                                if (typeof obj === 'object') {
-                                    if (Array.isArray(obj)) {
-                                        return obj.map(ensureArrays);
-                                    }
-                                    
-                                    const keys = Object.keys(obj);
-                                    if (keys.length > 0 && keys.every(key => !isNaN(parseInt(key)))) {
-                                        const arr = [];
-                                        for (let i = 0; i < keys.length; i++) {
-                                            if (obj.hasOwnProperty(i.toString())) {
-                                                arr[i] = ensureArrays(obj[i.toString()]);
-                                            }
-                                        }
-                                        return arr;
-                                    }
-                                    
-                                    const result = {};
-                                    for (const key in obj) {
-                                        if (obj.hasOwnProperty(key)) {
-                                            result[key] = ensureArrays(obj[key]);
-                                        }
-                                    }
-                                    return result;
-                                }
-                                
-                                return obj;
-                            }
-                            
-                            processedGeometry.coordinates = ensureArrays(processedGeometry.coordinates);
-                        }
                         
                         geom = new ol.format.GeoJSON().readGeometry(processedGeometry, {
                             dataProjection: 'EPSG:4326',
@@ -806,14 +701,14 @@ try {
                         });
                         
                     } catch (geomError) {
-                        console.error(`Geometry processing error for feature ${index + 1}:`, geomError);
+                        console.warn(`⚠️ Geometry error for feature ${index + 1}, using point:`, geomError);
                         geom = new ol.geom.Point(ol.proj.fromLonLat([f.lon, f.lat]));
                     }
                     
                     const feature = new ol.Feature({
                         geometry: geom,
-                        name: f.name,
-                        description: f.description,
+                        name: f.name || `Feature ${index + 1}`,
+                        description: f.description || '',
                         properties: f.properties || {}
                     });
                     
@@ -821,89 +716,102 @@ try {
                     featuresAdded++;
                     
                 } catch (error) {
-                    console.error(`Error processing feature ${index + 1}:`, error);
+                    console.error(`❌ Error processing feature ${index + 1}:`, error);
                 }
             });
 
-            console.log(`Total features added to map: ${featuresAdded}/${data.length}`);
+            console.log(`✅ Added ${featuresAdded}/${data.length} features to map`);
 
             if (featuresAdded === 0) {
-                console.error("No features were successfully added to the map");
+                console.error("❌ No features were successfully added to the map");
                 return;
             }
 
-            // ENHANCED: Flexible styling based on layer type and legend data
+            // Create intelligent styling based on layer type
             const vectorLayer = new ol.layer.Vector({
                 source: vectorSource,
-                style: feature => {
-                    const geomType = feature.getGeometry().getType();
-                    const props = feature.get('properties') || {};
-                    
-                    // ENHANCED: Layer-type specific styling
-                    if (dataLayerType === 'land_use') {
-                        return createLandUseStyle(geomType, props, legendData);
-                    } else if (dataLayerType === 'buildings') {
-                        return createBuildingStyle(geomType, props, legendData);
-                    } else if (dataLayerType === 'parcels') {
-                        return createParcelStyle(geomType, props, legendData);
-                    } else if (dataLayerType === 'environmental') {
-                        return createEnvironmentalStyle(geomType, props, legendData);
-                    } else if (dataLayerType === 'administrative') {
-                        return createAdministrativeStyle(geomType, props, legendData);
-                    } else {
-                        return createDefaultStyle(geomType, props);
-                    }
-                }
+                style: feature => createIntelligentStyle(feature, dataLayerType, legendData)
             });
 
             mapInstance.current.addLayer(vectorLayer);
-            console.log("✅ Enhanced vector layer added to map");
+            console.log("✅ Vector layer added to map");
             
-            // Fit to features with animation
+            // Fit to features
             const extent = vectorSource.getExtent();
-            
             if (extent && extent.every(coord => isFinite(coord))) {
                 mapInstance.current.getView().fit(extent, { 
                     padding: [50, 50, 50, 50], 
                     maxZoom: 16,
                     duration: 1000
                 });
-                console.log("📍 Map view fitted to features");
+                console.log("🎯 Map view fitted to features");
             }
         };
 
-        // ENHANCED: Layer-specific styling functions
-        const createLandUseStyle = (geomType, props, legendData) => {
-            const landUse = props.bgb2015_hoofdklasse_label || props.hoofdklasse || props.bodemgebruik || 'Unknown';
+        // IMPROVED: Intelligent styling function
+        const createIntelligentStyle = (feature, layerType, legendData) => {
+            const geomType = feature.getGeometry().getType();
+            const props = feature.get('properties') || {};
             
-            // Try to match with legend colors
             let fillColor = 'rgba(102, 126, 234, 0.7)';
             let strokeColor = '#667eea';
+            let strokeWidth = 2;
             
-            if (legendData && legendData.categories) {
-                const matchingCategory = legendData.categories.find(cat => 
-                    cat.label === landUse || landUse.toLowerCase().includes(cat.label.toLowerCase())
-                );
-                if (matchingCategory) {
-                    const color = matchingCategory.color;
-                    fillColor = `${color}80`; // Add transparency
-                    strokeColor = color;
-                }
-            } else {
-                // Fallback colors for common land use types
-                if (landUse.toLowerCase().includes('agrarisch') || landUse.toLowerCase().includes('agricultural')) {
+            // Intelligent styling based on layer type
+            if (layerType === 'land_use') {
+                const landUse = props.bodemgebruik || props.hoofdklasse || 'Unknown';
+                
+                if (landUse.toLowerCase().includes('agrarisch')) {
                     fillColor = 'rgba(34, 197, 94, 0.7)';
                     strokeColor = '#22c55e';
-                } else if (landUse.toLowerCase().includes('bebouwd') || landUse.toLowerCase().includes('urban')) {
+                } else if (landUse.toLowerCase().includes('bebouwd')) {
                     fillColor = 'rgba(239, 68, 68, 0.7)';
                     strokeColor = '#ef4444';
-                } else if (landUse.toLowerCase().includes('bos') || landUse.toLowerCase().includes('forest')) {
+                } else if (landUse.toLowerCase().includes('bos')) {
                     fillColor = 'rgba(34, 197, 94, 0.8)';
                     strokeColor = '#16a34a';
                 } else if (landUse.toLowerCase().includes('water')) {
                     fillColor = 'rgba(59, 130, 246, 0.8)';
                     strokeColor = '#3b82f6';
                 }
+                
+            } else if (layerType === 'buildings') {
+                const year = props.bouwjaar;
+                if (year) {
+                    if (year < 1900) {
+                        fillColor = 'rgba(139, 0, 0, 0.7)';
+                        strokeColor = '#8B0000';
+                    } else if (year < 1950) {
+                        fillColor = 'rgba(255, 69, 0, 0.7)';
+                        strokeColor = '#FF4500';
+                    } else if (year < 2000) {
+                        fillColor = 'rgba(50, 205, 50, 0.7)';
+                        strokeColor = '#32CD32';
+                    } else {
+                        fillColor = 'rgba(30, 144, 255, 0.7)';
+                        strokeColor = '#1E90FF';
+                    }
+                }
+                
+            } else if (layerType === 'parcels') {
+                const area = props.kadastraleGrootteWaarde || 0;
+                if (area > 0) {
+                    const areaHa = area / 10000;
+                    if (areaHa > 5) {
+                        fillColor = 'rgba(220, 38, 38, 0.6)';
+                        strokeColor = '#dc2626';
+                    } else if (areaHa > 1) {
+                        fillColor = 'rgba(249, 115, 22, 0.6)';
+                        strokeColor = '#f97316';
+                    } else {
+                        fillColor = 'rgba(34, 197, 94, 0.6)';
+                        strokeColor = '#22c55e';
+                    }
+                }
+                
+            } else if (layerType === 'environmental') {
+                fillColor = 'rgba(34, 197, 94, 0.7)';
+                strokeColor = '#22c55e';
             }
             
             if (geomType === 'Point') {
@@ -916,223 +824,38 @@ try {
                 });
             } else {
                 return new ol.style.Style({
-                    stroke: new ol.style.Stroke({ color: strokeColor, width: 2 }),
+                    stroke: new ol.style.Stroke({ color: strokeColor, width: strokeWidth }),
                     fill: new ol.style.Fill({ color: fillColor })
                 });
             }
         };
 
-        const createBuildingStyle = (geomType, props, legendData) => {
-            const area = props.area_m2 || props.oppervlakte_max || props.oppervlakte_min || 0;
-            const year = props.bouwjaar;
+        // Clear map function
+        const clearMap = () => {
+            setFeatures([]);
+            setLegendData(null);
+            setLayerType(null);
+            setSearchLocation(null);
+            setProcessingStatus('ready');
             
-            let fillColor = 'rgba(102, 126, 234, 0.7)';
-            let strokeColor = '#667eea';
-            
-            // Priority: Color by area if available
-            if (area > 0) {
-                if (area > 1000) {
-                    fillColor = 'rgba(220, 38, 38, 0.8)';
-                    strokeColor = '#dc2626';
-                } else if (area > 500) {
-                    fillColor = 'rgba(249, 115, 22, 0.8)';
-                    strokeColor = '#f97316';
-                } else if (area > 200) {
-                    fillColor = 'rgba(234, 179, 8, 0.8)';
-                    strokeColor = '#eab308';
-                } else {
-                    fillColor = 'rgba(34, 197, 94, 0.8)';
-                    strokeColor = '#22c55e';
+            if (mapInstance.current) {
+                const layersToRemove = [];
+                mapInstance.current.getLayers().forEach(layer => {
+                    if (layer instanceof ol.layer.Vector) {
+                        layersToRemove.push(layer);
+                    }
+                });
+                layersToRemove.forEach(layer => {
+                    mapInstance.current.removeLayer(layer);
+                });
+                
+                if (locationPinRef.current) {
+                    locationPinRef.current.setPosition(undefined);
                 }
             }
-            // Fallback: Color by age
-            else if (year) {
-                if (year < 1900) {
-                    fillColor = 'rgba(139, 0, 0, 0.7)';
-                    strokeColor = '#8B0000';
-                } else if (year < 1950) {
-                    fillColor = 'rgba(255, 69, 0, 0.7)';
-                    strokeColor = '#FF4500';
-                } else if (year < 2000) {
-                    fillColor = 'rgba(50, 205, 50, 0.7)';
-                    strokeColor = '#32CD32';
-                } else {
-                    fillColor = 'rgba(30, 144, 255, 0.7)';
-                    strokeColor = '#1E90FF';
-                }
-            }
-            
-            if (geomType === 'Point') {
-                const radius = area > 1000 ? 14 : area > 500 ? 12 : area > 200 ? 10 : 8;
-                return new ol.style.Style({
-                    image: new ol.style.Circle({
-                        radius: radius,
-                        fill: new ol.style.Fill({ color: strokeColor }),
-                        stroke: new ol.style.Stroke({ color: '#ffffff', width: 3 })
-                    })
-                });
-            } else {
-                return new ol.style.Style({
-                    stroke: new ol.style.Stroke({ color: strokeColor, width: 3 }),
-                    fill: new ol.style.Fill({ color: fillColor })
-                });
-            }
         };
 
-        const createParcelStyle = (geomType, props, legendData) => {
-            const area = props.kadastraleGrootteWaarde || 0;
-            
-            let fillColor = 'rgba(102, 126, 234, 0.6)';
-            let strokeColor = '#667eea';
-            
-            if (area > 0) {
-                const areaHa = area / 10000;
-                if (areaHa > 10) {
-                    fillColor = 'rgba(220, 38, 38, 0.6)';
-                    strokeColor = '#dc2626';
-                } else if (areaHa > 5) {
-                    fillColor = 'rgba(249, 115, 22, 0.6)';
-                    strokeColor = '#f97316';
-                } else if (areaHa > 1) {
-                    fillColor = 'rgba(234, 179, 8, 0.6)';
-                    strokeColor = '#eab308';
-                } else if (areaHa > 0.1) {
-                    fillColor = 'rgba(34, 197, 94, 0.6)';
-                    strokeColor = '#22c55e';
-                } else {
-                    fillColor = 'rgba(59, 130, 246, 0.6)';
-                    strokeColor = '#3b82f6';
-                }
-            }
-            
-            if (geomType === 'Point') {
-                return new ol.style.Style({
-                    image: new ol.style.Circle({
-                        radius: 10,
-                        fill: new ol.style.Fill({ color: strokeColor }),
-                        stroke: new ol.style.Stroke({ color: '#ffffff', width: 2 })
-                    })
-                });
-            } else {
-                return new ol.style.Style({
-                    stroke: new ol.style.Stroke({ color: strokeColor, width: 2 }),
-                    fill: new ol.style.Fill({ color: fillColor })
-                });
-            }
-        };
-
-        const createEnvironmentalStyle = (geomType, props, legendData) => {
-            const areaType = props.type_gebied || props.naam || props.gebiedsnaam || 'Protected Area';
-            
-            // Green-based color scheme for environmental areas
-            let fillColor = 'rgba(34, 197, 94, 0.7)';
-            let strokeColor = '#22c55e';
-            
-            // Try to match with legend colors if available
-            if (legendData && legendData.categories) {
-                const matchingCategory = legendData.categories.find(cat => 
-                    cat.label === areaType || areaType.toLowerCase().includes(cat.label.toLowerCase())
-                );
-                if (matchingCategory) {
-                    const color = matchingCategory.color;
-                    fillColor = `${color}80`;
-                    strokeColor = color;
-                }
-            } else {
-                // Fallback colors for different protection types
-                if (areaType.toLowerCase().includes('natura')) {
-                    fillColor = 'rgba(16, 185, 129, 0.7)';
-                    strokeColor = '#10b981';
-                } else if (areaType.toLowerCase().includes('vogel') || areaType.toLowerCase().includes('bird')) {
-                    fillColor = 'rgba(5, 150, 105, 0.7)';
-                    strokeColor = '#059669';
-                } else if (areaType.toLowerCase().includes('habitat')) {
-                    fillColor = 'rgba(4, 120, 87, 0.7)';
-                    strokeColor = '#047857';
-                }
-            }
-            
-            if (geomType === 'Point') {
-                return new ol.style.Style({
-                    image: new ol.style.Circle({
-                        radius: 12,
-                        fill: new ol.style.Fill({ color: strokeColor }),
-                        stroke: new ol.style.Stroke({ color: '#ffffff', width: 3 })
-                    })
-                });
-            } else {
-                return new ol.style.Style({
-                    stroke: new ol.style.Stroke({ color: strokeColor, width: 3 }),
-                    fill: new ol.style.Fill({ color: fillColor })
-                });
-            }
-        };
-
-        const createAdministrativeStyle = (geomType, props, legendData) => {
-            const boundaryType = props.gemeentenaam ? 'Municipality' : 
-                                  props.provincienaam ? 'Province' : 
-                                  props.wijknaam ? 'District' : 'Administrative';
-            
-            let fillColor = 'rgba(59, 130, 246, 0.5)';
-            let strokeColor = '#3b82f6';
-            let strokeWidth = 2;
-            
-            // Different styles for different administrative levels
-            if (boundaryType === 'Province') {
-                fillColor = 'rgba(139, 92, 246, 0.4)';
-                strokeColor = '#8b5cf6';
-                strokeWidth = 4;
-            } else if (boundaryType === 'Municipality') {
-                fillColor = 'rgba(59, 130, 246, 0.5)';
-                strokeColor = '#3b82f6';
-                strokeWidth = 3;
-            } else if (boundaryType === 'District') {
-                fillColor = 'rgba(6, 182, 212, 0.5)';
-                strokeColor = '#06b6d4';
-                strokeWidth = 2;
-            }
-            
-            if (geomType === 'Point') {
-                return new ol.style.Style({
-                    image: new ol.style.Circle({
-                        radius: 10,
-                        fill: new ol.style.Fill({ color: strokeColor }),
-                        stroke: new ol.style.Stroke({ color: '#ffffff', width: 2 })
-                    })
-                });
-            } else {
-                return new ol.style.Style({
-                    stroke: new ol.style.Stroke({ 
-                        color: strokeColor, 
-                        width: strokeWidth,
-                        lineDash: boundaryType === 'District' ? [5, 5] : undefined
-                    }),
-                    fill: new ol.style.Fill({ color: fillColor })
-                });
-            }
-        };
-
-        const createDefaultStyle = (geomType, props) => {
-            const fillColor = 'rgba(102, 126, 234, 0.6)';
-            const strokeColor = '#667eea';
-            
-            if (geomType === 'Point') {
-                return new ol.style.Style({
-                    image: new ol.style.Circle({
-                        radius: 8,
-                        fill: new ol.style.Fill({ color: strokeColor }),
-                        stroke: new ol.style.Stroke({ color: '#ffffff', width: 2 })
-                    })
-                });
-            } else {
-                return new ol.style.Style({
-                    stroke: new ol.style.Stroke({ color: strokeColor, width: 2 }),
-                    fill: new ol.style.Fill({ color: fillColor })
-                });
-            }
-        };
-
-        // Handle Enter key press
+        // Handle Enter key
         const handleKeyPress = (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -1145,46 +868,19 @@ try {
             return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         };
 
-        // ENHANCED: Clear map function
-        const clearMap = () => {
-            setFeatures([]);
-            setLegendData(null);
-            setLayerType(null);
-            setSearchLocation(null);
-            setAnalysisStatus(null);
-            
-            if (mapInstance.current) {
-                // Remove vector layers
-                const layersToRemove = [];
-                mapInstance.current.getLayers().forEach(layer => {
-                    if (layer instanceof ol.layer.Vector) {
-                        layersToRemove.push(layer);
-                    }
-                });
-                layersToRemove.forEach(layer => {
-                    mapInstance.current.removeLayer(layer);
-                });
-                
-                // Hide location pin
-                if (locationPinRef.current) {
-                    locationPinRef.current.setPosition(undefined);
-                }
-            }
-        };
-
         return (
             <div className="relative h-full w-full">
                 {/* Map Container */}
                 <div ref={mapRef} className="h-full w-full"></div>
                 
-                {/* Location Pin Component */}
-                {React.createElement(LocationPin, { 
+                {/* IMPROVED: Intelligent Location Pin Component */}
+                {React.createElement(IntelligentLocationPin, { 
                     searchLocation, 
                     mapInstance, 
                     locationPinRef 
                 })}
                 
-                {/* Map Controls - Top Right */}
+                {/* Map Controls */}
                 <div className="absolute top-4 right-4 z-40">
                     <div className="floating-card p-2">
                         <div className="flex space-x-2">
@@ -1221,11 +917,11 @@ try {
                     </div>
                 </div>
 
-                {/* ENHANCED: Map Context Info */}
+                {/* Map Context Info */}
                 <div className="absolute top-20 left-4 z-40 map-context-info">
                     <div className="floating-card p-3">
                         <div className="text-sm text-gray-700">
-                            <p className="font-medium">Map View</p>
+                            <p className="font-medium">🧠 Intelligent Map</p>
                             <p>Zoom: {mapZoom}</p>
                             {searchLocation && (
                                 <p className="text-red-600 font-medium">📍 {searchLocation.name}</p>
@@ -1235,34 +931,38 @@ try {
                                     {features.length} {layerType || 'Features'}
                                 </p>
                             )}
-                            {layerType && (
-                                <p className="text-purple-600 text-xs">
-                                    Type: {layerType.replace('_', ' ')}
-                                </p>
-                            )}
+                            <p className={`text-xs ${
+                                processingStatus === 'success' ? 'text-green-600' :
+                                processingStatus === 'error' ? 'text-red-600' :
+                                processingStatus === 'analyzing' ? 'text-yellow-600' :
+                                'text-gray-500'
+                            }`}>
+                                Status: {processingStatus}
+                            </p>
                         </div>
                     </div>
                 </div>
 
-                {/* ENHANCED: Chat Interface */}
+                {/* IMPROVED: Chat Interface */}
                 {isChatOpen ? (
                     <div className="fixed bottom-6 right-6 w-96 h-[600px] glass-effect rounded-2xl shadow-2xl z-50 flex flex-col animate-slide-up">
                         {/* Chat Header */}
                         <div className="chat-gradient p-4 rounded-t-2xl flex justify-between items-center">
                             <div className="flex items-center space-x-3">
                                 <div className={`w-3 h-3 rounded-full ${
-                                    analysisStatus === 'processing' ? 'bg-yellow-400 animate-pulse' :
-                                    analysisStatus === 'success' ? 'bg-green-400' :
-                                    analysisStatus === 'error' ? 'bg-red-400' :
+                                    processingStatus === 'analyzing' ? 'bg-yellow-400 animate-pulse' :
+                                    processingStatus === 'success' ? 'bg-green-400' :
+                                    processingStatus === 'error' ? 'bg-red-400' :
                                     'bg-blue-400'
                                 }`}></div>
                                 <div>
-                                    <h2 className="text-lg font-semibold text-white">Enhanced Mapper</h2>
+                                    <h2 className="text-lg font-semibold text-white">🧠 Intelligent Assistant</h2>
                                     <p className="text-sm text-blue-100">
-                                        {analysisStatus === 'processing' ? 'Processing...' :
-                                         analysisStatus === 'success' ? 'Analysis Complete' :
-                                         analysisStatus === 'error' ? 'Error Occurred' :
-                                         'Ready for Analysis'}
+                                        {processingStatus === 'analyzing' ? 'Analyzing query...' :
+                                         processingStatus === 'processing' ? 'Fetching data...' :
+                                         processingStatus === 'success' ? 'Analysis complete' :
+                                         processingStatus === 'error' ? 'Error occurred' :
+                                         'Ready for questions'}
                                     </p>
                                 </div>
                             </div>
@@ -1297,7 +997,7 @@ try {
                                             <span></span>
                                             <span></span>
                                         </div>
-                                        <p className="text-xs opacity-75 mt-1">Enhanced processing...</p>
+                                        <p className="text-xs opacity-75 mt-1">🧠 Processing intelligently...</p>
                                     </div>
                                 </div>
                             )}
@@ -1305,29 +1005,29 @@ try {
                             <div ref={messagesEndRef} />
                         </div>
 
-                        {/* ENHANCED: Input Area with better examples */}
+                        {/* IMPROVED: Input Area with intelligent examples */}
                         <div className="p-4 border-t border-gray-200">
                             <div className="flex flex-wrap gap-2 mb-3">
                                 <button
-                                    onClick={() => setQuery("Analyze agricultural land distribution in Utrecht province")}
+                                    onClick={() => setQuery("Show agricultural land in Utrecht province")}
                                     className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded-full hover:bg-green-200 transition-colors"
                                 >
                                     🌾 Land Use
                                 </button>
                                 <button
-                                    onClick={() => setQuery("Show me buildings near Leonard Springerlaan 37, Groningen")}
+                                    onClick={() => setQuery("Buildings near Amsterdam Centraal station")}
                                     className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded-full hover:bg-blue-200 transition-colors"
                                 >
                                     🏠 Buildings
                                 </button>
                                 <button
-                                    onClick={() => setQuery("Find large parcels suitable for development in Groningen")}
+                                    onClick={() => setQuery("Large parcels in Groningen")}
                                     className="px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded-full hover:bg-purple-200 transition-colors"
                                 >
                                     📐 Parcels
                                 </button>
                                 <button
-                                    onClick={() => setQuery("Show protected nature areas around Rotterdam")}
+                                    onClick={() => setQuery("Protected areas around Rotterdam")}
                                     className="px-2 py-1 text-xs bg-emerald-100 text-emerald-700 rounded-full hover:bg-emerald-200 transition-colors"
                                 >
                                     🌿 Nature
@@ -1341,7 +1041,7 @@ try {
                                     onChange={e => setQuery(e.target.value)}
                                     onKeyPress={handleKeyPress}
                                     className="flex-1 search-input rounded-xl px-4 py-2 text-sm focus:outline-none"
-                                    placeholder="Try different data types! 🌾🏠📐🌿"
+                                    placeholder="Ask about Dutch spatial data... 🧠📍"
                                     disabled={isLoading}
                                 />
                                 <button
@@ -1385,61 +1085,73 @@ try {
                     </button>
                 )}
 
-                {/* ENHANCED: Adaptive Statistics Component */}
-                {React.createElement(AdaptiveStatistics, { 
+                {/* IMPROVED: Smart Statistics Component */}
+                {React.createElement(SmartStatistics, { 
                     features: features,
                     legendData: legendData,
-                    layerType: layerType
+                    layerType: layerType,
+                    searchLocation: searchLocation
                 })}
 
-                {/* ENHANCED: Flexible Legend Component */}
+                {/* IMPROVED: Flexible Legend Component */}
                 {React.createElement(FlexibleLegend, { 
                     legendData: legendData 
                 })}
 
-                {/* ENHANCED: Status Indicator */}
-                {(features.length > 0 || searchLocation || legendData) && (
+                {/* IMPROVED: Intelligent Status Indicator */}
+                {(features.length > 0 || searchLocation || processingStatus !== 'ready') && (
                     <div style={{
                         position: 'fixed',
                         top: '50%',
                         right: '20px',
                         transform: 'translateY(-50%)',
                         zIndex: 999,
-                        backgroundColor: analysisStatus === 'success' ? 'rgba(34, 197, 94, 0.1)' : 
-                                        analysisStatus === 'error' ? 'rgba(239, 68, 68, 0.1)' : 
+                        backgroundColor: processingStatus === 'success' ? 'rgba(34, 197, 94, 0.1)' : 
+                                        processingStatus === 'error' ? 'rgba(239, 68, 68, 0.1)' : 
+                                        processingStatus === 'analyzing' ? 'rgba(245, 158, 11, 0.1)' :
                                         'rgba(59, 130, 246, 0.1)',
-                        border: `2px solid ${analysisStatus === 'success' ? '#22c55e' : 
-                                            analysisStatus === 'error' ? '#ef4444' : 
+                        border: `2px solid ${processingStatus === 'success' ? '#22c55e' : 
+                                            processingStatus === 'error' ? '#ef4444' : 
+                                            processingStatus === 'analyzing' ? '#f59e0b' :
                                             '#3b82f6'}`,
                         padding: '12px',
                         borderRadius: '8px',
                         fontSize: '11px',
-                        color: analysisStatus === 'success' ? '#15803d' : 
-                               analysisStatus === 'error' ? '#dc2626' : 
-                               '#1d4ed8'
+                        color: processingStatus === 'success' ? '#15803d' : 
+                               processingStatus === 'error' ? '#dc2626' : 
+                               processingStatus === 'analyzing' ? '#d97706' :
+                               '#1d4ed8',
+                        minWidth: '120px'
                     }}>
                         <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>
-                            {analysisStatus === 'success' ? '✅ ENHANCED READY!' : 
-                             analysisStatus === 'error' ? '❌ ERROR' : 
+                            {processingStatus === 'success' ? '✅ INTELLIGENT SUCCESS!' : 
+                             processingStatus === 'error' ? '❌ ERROR' : 
+                             processingStatus === 'analyzing' ? '🧠 ANALYZING...' :
+                             processingStatus === 'processing' ? '⚡ FETCHING...' :
                              '🔄 PROCESSING'}
                         </div>
                         <div>📍 Pin: {searchLocation ? '✅' : '❌'}</div>
                         <div>🏷️ Legend: {legendData ? '✅' : '❌'}</div>
-                        <div>📊 Stats: {features.length > 0 ? '✅' : '❌'}</div>
+                        <div>📊 Features: {features.length > 0 ? '✅' : '❌'}</div>
                         <div>🗺️ Layer: {layerType || 'None'}</div>
                         {features.length > 0 && (
-                            <div>{features.length} features</div>
+                            <div>{features.length} items</div>
+                        )}
+                        {searchLocation && (
+                            <div style={{ fontSize: '10px', marginTop: '4px', fontStyle: 'italic' }}>
+                                📍 {searchLocation.name}
+                            </div>
                         )}
                         {legendData && (
-                            <div style={{ fontSize: '10px', marginTop: '4px', fontStyle: 'italic' }}>
-                                {legendData.title}
+                            <div style={{ fontSize: '10px', marginTop: '2px', fontStyle: 'italic' }}>
+                                🏷️ {legendData.title}
                             </div>
                         )}
                     </div>
                 )}
 
-                {/* ENHANCED: Help Overlay */}
-                {!features.length && !isLoading && !searchLocation && (
+                {/* IMPROVED: Smart Help Overlay */}
+                {!features.length && !isLoading && !searchLocation && processingStatus === 'ready' && (
                     <div style={{
                         position: 'fixed',
                         bottom: '50%',
@@ -1447,29 +1159,84 @@ try {
                         transform: 'translate(-50%, 50%)',
                         zIndex: 998,
                         backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                        padding: '20px',
+                        padding: '24px',
                         borderRadius: '16px',
                         boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)',
                         border: '1px solid rgba(0, 0, 0, 0.1)',
                         fontFamily: 'Inter, sans-serif',
-                        maxWidth: '400px',
+                        maxWidth: '420px',
                         textAlign: 'center'
                     }}>
-                        <div style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '12px', color: '#1f2937' }}>
-                            🎯 Enhanced PDOK Analysis System
+                        <div style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '12px', color: '#1f2937' }}>
+                            🧠 Intelligent PDOK Assistant
                         </div>
-                        <div style={{ fontSize: '12px', color: '#6b7280', lineHeight: '1.4' }}>
-                            Try different types of spatial analysis:
+                        <div style={{ fontSize: '13px', color: '#6b7280', lineHeight: '1.4', marginBottom: '12px' }}>
+                            I analyze your queries intelligently and automatically plot locations!
                         </div>
-                        <div style={{ fontSize: '11px', color: '#4b5563', marginTop: '8px', lineHeight: '1.3' }}>
-                            🌾 <strong>Land Use:</strong> "Agricultural land in Utrecht"<br/>
-                            🏠 <strong>Buildings:</strong> "Buildings near [address]"<br/>
-                            📐 <strong>Parcels:</strong> "Large parcels in [city]"<br/>
-                            🌿 <strong>Nature:</strong> "Protected areas around [city]"<br/>
-                            🗺️ <strong>Admin:</strong> "Municipal boundaries"
+                        <div style={{ fontSize: '12px', color: '#4b5563', lineHeight: '1.3' }}>
+                            <strong>🎯 Smart Features:</strong><br/>
+                            📍 <strong>Auto Location Pins:</strong> Mention any Dutch place<br/>
+                            🧠 <strong>Intelligent Analysis:</strong> I understand what you need<br/>
+                            ⚡ <strong>Fast Response:</strong> Maximum 3 tool calls<br/>
+                            🏷️ <strong>Dynamic Legends:</strong> Generated for each data type
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#4b5563', marginTop: '12px', lineHeight: '1.3' }}>
+                            <strong>Try saying:</strong><br/>
+                            "Show agricultural land in Utrecht province"<br/>
+                            "Buildings near Amsterdam Centraal station"<br/>
+                            "Large parcels in Groningen"
                         </div>
                         <div style={{ fontSize: '10px', color: '#9ca3af', marginTop: '12px', fontStyle: 'italic' }}>
-                            Each analysis type gets its own legend and styling!
+                            🚀 Powered by intelligent query analysis
+                        </div>
+                    </div>
+                )}
+
+                {/* IMPROVED: Processing Animation Overlay */}
+                {isLoading && (
+                    <div style={{
+                        position: 'fixed',
+                        top: '0',
+                        left: '0',
+                        right: '0',
+                        bottom: '0',
+                        backgroundColor: 'rgba(0, 0, 0, 0.1)',
+                        zIndex: 1000,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        pointerEvents: 'none'
+                    }}>
+                        <div style={{
+                            backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                            padding: '20px',
+                            borderRadius: '12px',
+                            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2)',
+                            textAlign: 'center',
+                            fontFamily: 'Inter, sans-serif'
+                        }}>
+                            <div style={{
+                                fontSize: '16px',
+                                fontWeight: 'bold',
+                                color: '#1f2937',
+                                marginBottom: '8px'
+                            }}>
+                                🧠 Intelligent Processing
+                            </div>
+                            <div style={{
+                                fontSize: '12px',
+                                color: '#6b7280',
+                                marginBottom: '12px'
+                            }}>
+                                {processingStatus === 'analyzing' ? 'Analyzing your query...' :
+                                 processingStatus === 'processing' ? 'Fetching spatial data...' :
+                                 'Processing intelligently...'}
+                            </div>
+                            <div className="typing-indicator">
+                                <span></span>
+                                <span></span>
+                                <span></span>
+                            </div>
                         </div>
                     </div>
                 )}
@@ -1477,7 +1244,7 @@ try {
         );
     };
 
-    console.log("Rendering Enhanced Production Map-Aware React app");
+    console.log("🚀 Rendering INTELLIGENT Production Map-Aware React app");
     
     if (root) {
         root.render(React.createElement(App));
@@ -1486,5 +1253,5 @@ try {
     }
     
 } catch (error) {
-    console.error("Failed to initialize Enhanced Production React app:", error);
+    console.error("❌ Failed to initialize INTELLIGENT React app:", error);
 }
