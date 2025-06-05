@@ -317,48 +317,75 @@ class IntentDrivenPDOKDiscoveryTool(Tool):
                     print(f"   ❌ Invalid location_center dict format: {location_center}")
                     return None
             elif isinstance(location_center, (list, tuple)) and len(location_center) == 2:
-                lat, lon = float(location_center[0]), float(location_center[1])
+                coord1, coord2 = float(location_center[0]), float(location_center[1])
+                
+                # CRITICAL FIX: Check if these are already RD New coordinates
+                if coord1 > 10000 and coord2 > 10000:
+                    # These are already RD New coordinates (X, Y)
+                    print(f"   ✅ FIXED: Detected input as RD New coordinates: X={coord1}, Y={coord2}")
+                    
+                    if coordinate_system == "EPSG:28992":
+                        # Use directly
+                        x, y = coord1, coord2
+                        buffer = 10000  # 10km in meters
+                        bbox = f"{x-buffer},{y-buffer},{x+buffer},{y+buffer}"
+                        print(f"   🗺️ FIXED: RD New bbox created directly: {bbox}")
+                        return bbox
+                    else:
+                        # Convert RD New to WGS84 for WGS84 request
+                        try:
+                            import pyproj
+                            transformer = pyproj.Transformer.from_crs("EPSG:28992", "EPSG:4326", always_xy=True)
+                            lon, lat = transformer.transform(coord1, coord2)
+                            print(f"   🔄 FIXED: Converted RD New to WGS84: {lat}, {lon}")
+                        except ImportError:
+                            print(f"   ⚠️ PyProj not available for RD New to WGS84 conversion")
+                            return None
+                else:
+                    # These are WGS84 coordinates
+                    lat, lon = coord1, coord2
+                    print(f"   ✅ FIXED: Detected input as WGS84 coordinates: lat={lat}, lon={lon}")
             else:
                 print(f"   ❌ Invalid location_center format: {location_center}")
                 return None
             
-            print(f"   📍 Processing coordinates: lat={lat}, lon={lon}")
+            # Now we have lat, lon in WGS84 format
+            print(f"   📍 FIXED: Processing WGS84 coordinates: lat={lat}, lon={lon}")
             
             if coordinate_system == "EPSG:4326":
                 # WGS84 - use degrees (approximately 10km radius)
                 buffer = 0.1
                 bbox = f"{lon-buffer},{lat-buffer},{lon+buffer},{lat+buffer}"
-                print(f"   🌐 WGS84 bbox created: {bbox}")
+                print(f"   🌐 FIXED: WGS84 bbox created: {bbox}")
                 return bbox
             
             elif coordinate_system == "EPSG:28992":
                 # RD New - convert coordinates
                 try:
                     import pyproj
-                    print(f"   🔄 Converting WGS84 to RD New...")
+                    print(f"   🔄 FIXED: Converting WGS84 to RD New...")
                     
-                    # FIXED: Ensure inputs are scalar values
                     transformer = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:28992", always_xy=True)
                     x, y = transformer.transform(float(lon), float(lat))
                     
-                    print(f"   📍 RD New coordinates: x={x:.2f}, y={y:.2f}")
+                    print(f"   📍 FIXED: RD New coordinates: x={x:.2f}, y={y:.2f}")
                     
                     buffer = 10000  # 10km in meters
                     bbox = f"{x-buffer},{y-buffer},{x+buffer},{y+buffer}"
-                    print(f"   🗺️ RD New bbox created: {bbox}")
+                    print(f"   🗺️ FIXED: RD New bbox created: {bbox}")
                     return bbox
                     
                 except ImportError:
                     print("   ⚠️ PyProj not available for coordinate transformation")
                     return None
                 except Exception as e:
-                    print(f"   ❌ Coordinate transformation error: {e}")
+                    print(f"   ❌ FIXED: Coordinate transformation error: {e}")
                     return None
             
             return None
             
         except Exception as e:
-            print(f"   ❌ Error creating bbox: {e}")
+            print(f"   ❌ FIXED: Error creating bbox: {e}")
             return None
     
     def _perform_comprehensive_attribute_analysis(self, features: List[Dict], config: Dict) -> Dict:

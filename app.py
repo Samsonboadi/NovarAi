@@ -818,97 +818,176 @@ def query():
         
         # Enhanced intent-driven context prompt
         intent_driven_prompt = f"""
-            User query: "{query_text}"
+        User query: "{query_text}"
 
-            Current map context:
-            - Map center: {map_center[1]:.4f}°N, {map_center[0]:.4f}°E  
-            - Zoom level: {map_zoom}
-            - Features currently on map: {len(current_features)}
+        Map context: {map_center[1]:.4f}°N, {map_center[0]:.4f}°E (zoom: {map_zoom})
 
-            You are an intelligent AI assistant with INTENT-DRIVEN analysis capabilities.
+        You are an INTELLIGENT spatial AI with OPTIMIZED execution. Be smart about analysis but efficient in execution.
 
-            🎯 MANDATORY WORKFLOW - INTENT FIRST:
+        🧠 **INTELLIGENT WORKFLOW** (Smart Analysis + Fast Execution):
 
-            1. **ANALYZE USER INTENT** (in comments, no tools yet):
-               ```python
-               # INTENT ANALYSIS:
-               # Query type: [land_use_analysis/building_analysis/parcel_analysis/environmental_analysis/administrative_analysis]
-               # Primary service needed: [bestandbodemgebruik/bag/cadastral/natura2000/cbs]
-               # Location mentioned: [location name or "none"]
-               # Analysis required: [area calculation/distribution/filtering/visualization]
-               # Expected output: [what user wants to see]
-               ```
+        **Phase 1: INTELLIGENT ANALYSIS** (comments only - no tool calls yet)
+        ```python
+        # SMART INTENT DETECTION:
+        # Query type: [land_use_analysis/building_analysis/parcel_analysis/environmental_analysis/administrative_analysis]
+        # Service needed: [bestandbodemgebruik/bag/cadastral/natura2000/cbs]
+        # Location: [extract location name]
+        # Analysis type: [distribution/filtering/comparison/statistics]
+        # Complexity: [simple_data_fetch/filtered_analysis/multi_layer_analysis]
+        # Expected output: [what user wants to see]
 
-            2. **TARGETED SERVICE DISCOVERY** (single service only):
-               - Use discover_pdok_services with SPECIFIC service name based on intent
-               - For land use analysis → service_name="bestandbodemgebruik" 
-               - For building analysis → service_name="bag"  
-               - For parcel analysis → service_name="cadastral"
-               - For environmental analysis → service_name="natura2000"
-               - For administrative analysis → service_name="cbs"
-               - ALWAYS set get_attributes=True to get attribute information
+        # INTELLIGENT SERVICE SELECTION:
+        # Land use/agricultural → bestandbodemgebruik + layer: bestand_bodemgebruik_2015
+        # Buildings/construction → bag + layer: bag:pand  
+        # Parcels/property → cadastral + layer: kadastralekaart:Perceel
+        # Nature/protected → natura2000 + layer: natura2000:natura2000
+        # Administrative → cbs + layer: cbs_gemeente_2023_gegeneraliseerd
+        ```
 
-            3. **LOCATION RESOLUTION** (if needed):
-               - Use search_location_coordinates for mentioned locations
-               - Store coordinates for search location pin display
+        **Phase 2: EFFICIENT EXECUTION** (small, focused steps)
 
-            4. **PRECISE DATA REQUEST** (using discovered attributes):
-               - Use fetch_pdok_data with exact service URL and layer from discovery
-               - Use discovered attribute names for filters (never hardcoded names)
-               - Construct search area based on location and appropriate radius
+        **Step 1: Smart Location Resolution** (if location mentioned)
+        ```python
+        # Only if location is mentioned in query
+        location_result = find_location_coordinates("location_name") 
+        search_location = {{"lat": location_result['lat'], "lon": location_result['lon'], "name": "location_name"}}
+        ```
 
-            5. **ANALYSIS AND RESPONSE**:
-               - Process data according to user intent
-               - Calculate totals, percentages, distributions as requested
-               - Format for flexible legend system
-               - Return structured response with text_description and geojson_data
+        **Step 2: Intelligent Service Discovery** (targeted, not comprehensive)
+        ```python
+        # Discover ONLY the service you need (based on Phase 1 analysis)
+        service_info = discover_pdok_services(
+            service_name="target_service",  # bestandbodemgebruik/bag/cadastral/natura2000/cbs
+            get_attributes=True,
+            sample_data=False,  # Skip slow sampling for efficiency
+            location_center=None,
+            sample_size=5  # Minimal sample if needed
+        )
+        ```
 
-            🚨 CRITICAL RULES:
-            ❌ NEVER discover all services - only the one you need
-            ❌ NEVER use hardcoded attribute names like 'kadastraleGrootteWaarde', 'oppervlakte_min'
-            ❌ NEVER skip intent analysis
-            ❌ NEVER use wrong service for analysis type
-            ❌ NEVER assume attribute names exist without discovery
-            ✅ ALWAYS analyze intent first (in comments)
-            ✅ ALWAYS discover targeted service only
-            ✅ ALWAYS use exact discovered attribute names
-            ✅ ALWAYS match service to analysis type
-            ✅ ALWAYS include search location information
-            ✅ ALWAYS make sure the retrieved coordnates from the location search are in RdNew EPSG:28992 format that is critical for making querry to the PDOK services
-            ✅ ALWAYS return structured JSON response
-            ✅ If Data retieval fails, try again with either WGS84 or EPSG:28992, one of them should work import json if dealing with geographic data
-            🎯 SERVICE MAPPING:
-            - "agricultural land", "land use", "distribution" → bestandbodemgebruik service
-            - "buildings", "construction", "bouwjaar" → bag service
-            - "parcels", "properties", "kadaster" → cadastral service
-            - "protected areas", "nature", "natura2000" → natura2000 service
-            - "municipalities", "boundaries", "administrative" → cbs service
+        **Step 3: Smart Data Request** (optimized parameters)
+        ```python
+        # Intelligent parameter selection based on analysis type and service
+        result = fetch_pdok_data(
+            service_url=service_info['service']['url'],
+            layer_name=service_info['service']['primary_layer'], 
+            search_area={{"center": [search_location['lat'], search_location['lon']], "radius_km": smart_radius}},
+            filters=intelligent_filters,  # Based on discovered attributes or None
+            max_features=optimal_feature_count,  # 25 for exploration, 100 for analysis
+            purpose="Intelligent analysis: [specific purpose]"
+        )
+        ```
 
-            📍 LOCATION PIN REQUIREMENTS:
-            - If location is mentioned, find coordinates and include in response
-            - Add search_location to response for map pin display
-            - Format: {{"lat": latitude, "lon": longitude, "name": "Location Name"}}
+        **Step 4: Intelligent Analysis & Response**
+        ```python
+        features = result.get('features', [])
 
-            🏷️ FLEXIBLE LEGEND SUPPORT:
-            - Features will be analyzed for layer type (land_use, buildings, parcels, environmental, administrative)
-            - Frontend will create appropriate legend based on layer type
-            - Ensure features have proper properties for legend generation
+        # Smart feature analysis based on query intent
+        if analysis_type == "distribution":
+            # Calculate distributions using discovered attribute names
+            pass
+        elif analysis_type == "filtering": 
+            # Apply intelligent filters
+            pass
+        elif analysis_type == "statistics":
+            # Calculate relevant statistics
+            pass
 
-            📊 RESPONSE FORMAT:
-            Always return JSON structure:
-            ```python
-            import json
-            final_answer(json.dumps({{
-                "text_description": "Detailed analysis description with statistics",
-                "geojson_data": processed_features_array,
-                "search_location": {{"lat": lat, "lon": lon, "name": "Location Name"}},  # If location found
-                "layer_type": "detected_layer_type",  # For legend generation
-                "analysis_summary": {{"key": "statistics"}}  # Optional summary data
-            }}))
-            ```
+        # Intelligent response formatting
+        import json
+        final_answer(json.dumps({{
+            "text_description": "Intelligent analysis with specific insights",
+            "geojson_data": features,
+            "search_location": search_location if location_mentioned else None,
+            "layer_type": detected_layer_type,
+            "legend_data": intelligent_legend_data,  # Backend will create this
+            "analysis_summary": smart_analysis_results
+        }}))
+        ```
 
-            Start with intent analysis in comments, then proceed with targeted discovery.
-            """
+        🧠 **INTELLIGENT OPTIMIZATIONS**:
+
+        **Smart Parameter Selection:**
+        - **Radius**: 2km for buildings, 10km for land use, 25km for administrative
+        - **Features**: 25 for exploration, 50 for analysis, 100 for comprehensive
+        - **Filters**: Use discovered attributes intelligently, not hardcoded names
+        - **Coordinate System**: Let tools handle conversion automatically
+
+        **Intelligent Service Mapping:**
+        ```python
+        # Smart service selection based on keywords and context
+        if "agricultural" or "land use" or "distribution" in query.lower():
+            service = "bestandbodemgebruik"
+            layer = "bestandbodemgebruik:bestand_bodemgebruik_2015"
+            smart_radius = 10  # km
+            optimal_features = 50
+            
+        elif "building" or "construction" or "address" in query.lower():
+            service = "bag" 
+            layer = "bag:pand"
+            smart_radius = 2  # km
+            optimal_features = 100
+            
+        elif "parcel" or "property" or "kadaster" in query.lower():
+            service = "cadastral"
+            layer = "kadastralekaart:Perceel" 
+            smart_radius = 5  # km
+            optimal_features = 75
+            
+        elif "nature" or "protected" or "natura2000" in query.lower():
+            service = "natura2000"
+            layer = "natura2000:natura2000"
+            smart_radius = 15  # km  
+            optimal_features = 25
+            
+        elif "municipal" or "boundary" or "administrative" in query.lower():
+            service = "cbs"
+            layer = "cbs_gemeente_2023_gegeneraliseerd"
+            smart_radius = 25  # km
+            optimal_features = 20
+        ```
+
+        **Intelligent Error Handling:**
+        - If no location found → use map center coordinates
+        - If no features found → try broader radius automatically  
+        - If service fails → suggest alternative approach
+        - If too many features → apply intelligent sampling
+
+        **Smart Execution Strategy:**
+        - Phase 1: Think smart (comments only) - 0 seconds
+        - Step 1: Quick location lookup - 3-5 seconds
+        - Step 2: Targeted discovery - 10-15 seconds  
+        - Step 3: Optimized data fetch - 15-30 seconds
+        - Step 4: Intelligent analysis - 5-10 seconds
+        - **Total: 35-65 seconds with full intelligence**
+
+        🎯 **INTELLIGENT ANALYSIS PATTERNS**:
+
+        **For Land Use Queries:**
+        - Automatically detect agricultural vs urban vs natural patterns
+        - Calculate area distributions using discovered attribute names
+        - Provide percentage breakdowns and total areas
+        - Generate intelligent insights about land use patterns
+
+        **For Building Queries:**  
+        - Analyze age distributions, area patterns, density metrics
+        - Provide construction period analysis and urban development insights
+        - Calculate building statistics and spatial patterns
+
+        **For Parcel Queries:**
+        - Analyze size distributions, ownership patterns, development potential
+        - Provide area statistics and property market insights
+
+        **For Environmental Queries:**
+        - Analyze protection levels, habitat types, conservation status
+        - Provide environmental impact assessments and biodiversity insights
+
+        **For Administrative Queries:**
+        - Analyze boundaries, jurisdictions, governance structures
+        - Provide demographic and administrative insights
+
+        Start with Phase 1 intelligent analysis, then proceed with efficient execution.
+        """
         
         print("🎯 AI analyzing intent and making targeted requests...")
 
