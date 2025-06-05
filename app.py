@@ -192,9 +192,9 @@ def create_simple_agent():
     agent = CodeAgent(
         model=model,
         tools=tools,
-        max_steps=4,  # Keep it simple
+        max_steps=10,  # Keep it simple
         prompt_templates=prompt_config,
-        additional_authorized_imports=["json", "re"]
+        additional_authorized_imports=["json", "re","geopy"]
     )
     
     return agent, tools_available
