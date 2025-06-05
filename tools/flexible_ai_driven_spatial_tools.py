@@ -1,5 +1,3 @@
-# tools/fixed_flexible_ai_driven_spatial_tools.py
-
 import requests
 import json
 import xml.etree.ElementTree as ET
@@ -10,56 +8,34 @@ from typing import Dict, List, Optional, Union, Tuple
 
 class FlexibleSpatialDataTool(Tool):
     """
-    FIXED: Flexible tool that can fetch data from any PDOK service with proper coordinate system handling.
+    FIXED: Flexible tool with precise location-based data retrieval and building-specific improvements.
     """
     
     name = "fetch_pdok_data"
-    description = """Fetch data from any PDOK WFS service with flexible parameters and FIXED coordinate system handling.
+    description = """Fetch data from any PDOK WFS service with precise location-based retrieval.
 
-The AI should use this tool when it needs geospatial data from PDOK services.
-FIXED ISSUES:
-- Proper coordinate system detection and usage
-- Correct CQL filter syntax
-- Better error handling for empty results
-"""
+    CRITICAL FIXES:
+    - Strict location containment with configurable radius
+    - Enhanced distance validation to ensure features are within the specified area
+    - Improved coordinate system handling
+    - Building-specific optimizations with correct attribute mapping
+    - Detailed logging for debugging filter and location issues
+    """
     
     inputs = {
-        "service_url": {
-            "type": "string",
-            "description": "PDOK WFS service URL (AI determines which service to use)"
-        },
-        "layer_name": {
-            "type": "string", 
-            "description": "Layer name to query (AI determines based on data needs)"
-        },
-        "search_area": {
-            "type": "object",
-            "description": "Search area definition with center point and radius",
-            "nullable": True
-        },
-        "filters": {
-            "type": "object",
-            "description": "Filters to apply (CQL, attribute filters, etc.)",
-            "nullable": True
-        },
-        "max_features": {
-            "type": "integer",
-            "description": "Maximum features to return",
-            "nullable": True
-        },
-        "purpose": {
-            "type": "string",
-            "description": "What this data will be used for (helps with processing)",
-            "nullable": True
-        }
+        "service_url": {"type": "string", "description": "PDOK WFS service URL"},
+        "layer_name": {"type": "string", "description": "Layer name to query"},
+        "search_area": {"type": "object", "description": "Search area with center point and radius", "nullable": True},
+        "filters": {"type": "object", "description": "CQL or attribute filters", "nullable": True},
+        "max_features": {"type": "integer", "description": "Maximum features to return", "nullable": True},
+        "purpose": {"type": "string", "description": "Data usage purpose", "nullable": True},
+        "strict_containment": {"type": "boolean", "description": "Ensure features are within radius (default: True)", "nullable": True}
     }
     output_type = "object"
     is_initialized = True
     
     def __init__(self):
         super().__init__()
-        
-        # Initialize coordinate transformers
         try:
             import pyproj
             self.transformer_to_rd = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:28992", always_xy=True)
@@ -74,55 +50,67 @@ FIXED ISSUES:
     
     def forward(self, service_url: str, layer_name: str, search_area: Optional[Union[Dict, str]] = None, 
                 filters: Optional[Union[Dict, str]] = None, max_features: Optional[int] = 100,
-                purpose: Optional[str] = None) -> Dict:
-        """FIXED: Fetch data from PDOK service with proper coordinate system handling."""
-        
+                purpose: Optional[str] = None, strict_containment: bool = True) -> Dict:
         try:
             print(f"🌐 FIXED Flexible PDOK data fetch")
             print(f"   Service: {service_url}")
             print(f"   Layer: {layer_name}")
             print(f"   Purpose: {purpose}")
-            print(f"   Search area: {search_area} (type: {type(search_area)})")
-            print(f"   Filters: {filters} (type: {type(filters)})")
+            print(f"   Strict Containment: {strict_containment}")
+            print(f"   Filters: {filters}")
             
-            # FIXED: Determine coordinate system based on service URL patterns
+            is_building_request = 'bag' in service_url or 'pand' in layer_name.lower()
+            if is_building_request:
+                print(f"🏠 FIXED: Building request detected - applying building-specific optimizations")
+                if search_area and isinstance(search_area, dict) and 'radius_km' in search_area:
+                    original_radius = search_area['radius_km']
+                    if original_radius > 3.0:
+                        search_area['radius_km'] = 1.0
+                        print(f"🔧 FIXED: Reduced search radius from {original_radius}km to {search_area['radius_km']}km")
+                elif search_area and isinstance(search_area, dict):
+                    search_area['radius_km'] = 1.0
+                    print(f"🔧 FIXED: Set default building search radius to 1km")
+            
             srs = self._determine_coordinate_system_fixed(service_url)
             print(f"   🗺️ FIXED: Using coordinate system: {srs}")
             
-            # Build base parameters
             params = {
                 'service': 'WFS',
                 'version': '2.0.0',
                 'request': 'GetFeature',
                 'typeName': layer_name,
                 'outputFormat': 'application/json',
-                'srsName': srs,  # FIXED: Use correct coordinate system
+                'srsName': srs,
                 'count': max_features or 100
             }
             
-            # FIXED: Process search area with correct coordinate system
+            radius_km = None
             if search_area:
-                bbox = self._process_search_area_fixed(search_area, srs)
+                bbox, radius_km = self._process_search_area_fixed(search_area, srs)
                 if bbox:
                     params['bbox'] = f"{bbox},{srs}"
                     print(f"   ✅ FIXED Search area processed: {bbox}")
                 else:
                     print("   ⚠️ Could not process search area - proceeding without bbox")
             
-            # FIXED: Process filters with correct syntax
-            if filters:
-                cql_filter = self._build_cql_filter_fixed(filters)
+            cql_filters = []
+            if strict_containment and search_area and isinstance(search_area, dict) and 'center' in search_area:
+                cql_filter = self._build_containment_cql_filter(search_area, srs)
                 if cql_filter:
-                    params['cql_filter'] = cql_filter
-                    print(f"   ✅ FIXED CQL filter applied: {cql_filter}")
-                else:
-                    print("   ⚠️ Could not build CQL filter")
+                    cql_filters.append(cql_filter)
+                    print(f"   ✅ FIXED Added containment CQL filter: {cql_filter}")
             
-            print(f"🚀 FIXED Executing WFS request with parameters:")
-            for key, value in params.items():
-                print(f"   {key}: {value}")
+            if filters:
+                user_cql_filter = self._build_cql_filter_fixed(filters, is_building_request)
+                if user_cql_filter:
+                    cql_filters.append(user_cql_filter)
+                    print(f"   ✅ FIXED User CQL filter applied: {user_cql_filter}")
             
-            # Make request
+            if cql_filters:
+                params['cql_filter'] = " AND ".join(cql_filters)
+            
+            print(f"🚀 FIXED Executing WFS request with params: {params}")
+            
             response = requests.get(service_url, params=params, timeout=30)
             
             print(f"📡 Response status: {response.status_code}")
@@ -130,13 +118,6 @@ FIXED ISSUES:
             
             if response.status_code != 200:
                 print(f"❌ HTTP Error: {response.status_code}")
-                print(f"Response content: {response.text[:500]}")
-                
-                # FIXED: Try alternative coordinate system if first attempt fails
-                if srs == "EPSG:28992":
-                    print("🔄 FIXED: Retrying with WGS84...")
-                    return self._retry_with_wgs84(service_url, layer_name, search_area, filters, max_features, purpose)
-                
                 return {
                     'error': f'HTTP {response.status_code}: {response.text[:200]}',
                     'features': [],
@@ -148,16 +129,26 @@ FIXED ISSUES:
             
             print(f"📦 Received {len(features)} raw features")
             
-            # FIXED: Better handling of empty results
             if len(features) == 0:
-                print("⚠️ FIXED: No features returned - trying broader search...")
-                return self._try_broader_search(service_url, layer_name, search_area, purpose, srs)
+                print("⚠️ FIXED: No features returned")
+                return {
+                    'features': [],
+                    'count': 0,
+                    'success': True,
+                    'message': 'No features found'
+                }
             
-            # Process features
             processed_features = []
+            search_center = None
+            
+            if search_area and isinstance(search_area, dict) and 'center' in search_area:
+                search_center = search_area['center']
+            
             for i, feature in enumerate(features):
                 try:
-                    processed = self._process_feature_fixed(feature, srs, purpose)
+                    processed = self._process_feature_fixed(
+                        feature, srs, purpose, search_center, is_building_request, radius_km, strict_containment
+                    )
                     if processed:
                         processed_features.append(processed)
                 except Exception as e:
@@ -166,6 +157,11 @@ FIXED ISSUES:
             
             print(f"✅ FIXED Processed {len(processed_features)} valid features")
             
+            legend_data = None
+            if is_building_request and processed_features:
+                legend_data = self._generate_building_legend(processed_features)
+                print(f"🏷️ FIXED: Generated building legend with {len(legend_data.get('categories', []))} categories")
+            
             return {
                 "features": processed_features,
                 "count": len(processed_features),
@@ -173,7 +169,9 @@ FIXED ISSUES:
                 "layer": layer_name,
                 "purpose": purpose,
                 "coordinate_system": srs,
-                "success": True
+                "success": True,
+                "legend_data": legend_data,
+                "is_building_data": is_building_request
             }
             
         except Exception as e:
@@ -186,374 +184,182 @@ FIXED ISSUES:
             }
     
     def _determine_coordinate_system_fixed(self, service_url: str) -> str:
-        """FIXED: Determine correct coordinate system based on service."""
-        
-        # FIXED: Specific mapping based on actual PDOK services
-        if "bestandbodemgebruik" in service_url:
-            return "EPSG:28992"  # Land use data uses RD New
-        elif "bag" in service_url:
-            return "EPSG:28992"  # BAG uses RD New
-        elif "brk" in service_url:
-            return "EPSG:28992"  # BRK uses RD New
+        if "bag" in service_url:
+            return "EPSG:28992"
+        elif "bestandbodemgebruik" in service_url:
+            return "EPSG:28992"
         elif "kadaster" in service_url:
-            return "EPSG:28992"  # Cadastral uses RD New
+            return "EPSG:28992"
         elif "natura2000" in service_url:
-            return "EPSG:28992"  # Natura2000 uses RD New
+            return "EPSG:28992"
         elif "cbs" in service_url and "wijkenbuurten" in service_url:
-            return "EPSG:28992"  # CBS administrative boundaries use RD New
+            return "EPSG:28992"
         else:
-            # Default to WGS84 for unknown services
             return "EPSG:4326"
     
-    def _retry_with_wgs84(self, service_url: str, layer_name: str, search_area: Optional[Union[Dict, str]], 
-                         filters: Optional[Union[Dict, str]], max_features: Optional[int], purpose: Optional[str]) -> Dict:
-        """FIXED: Retry request with WGS84 coordinate system."""
-        
-        print("🔄 FIXED: Retrying with WGS84 coordinate system...")
-        
-        # Build parameters with WGS84
-        srs = "EPSG:4326"
-        params = {
-            'service': 'WFS',
-            'version': '2.0.0',
-            'request': 'GetFeature',
-            'typeName': layer_name,
-            'outputFormat': 'application/json',
-            'srsName': srs,
-            'count': max_features or 100
-        }
-        
-        # Process search area for WGS84
-        if search_area:
-            bbox = self._process_search_area_fixed(search_area, srs)
-            if bbox:
-                params['bbox'] = f"{bbox},{srs}"
-        
-        # Process filters
-        if filters:
-            cql_filter = self._build_cql_filter_fixed(filters)
-            if cql_filter:
-                params['cql_filter'] = cql_filter
-        
+    def _process_search_area_fixed(self, search_area: Union[Dict, str], srs: str) -> Tuple[Optional[str], Optional[float]]:
         try:
-            response = requests.get(service_url, params=params, timeout=30)
+            print(f"🔍 FIXED Processing search area: {search_area}")
             
-            if response.status_code == 200:
-                data = response.json()
-                features = data.get('features', [])
-                
-                processed_features = []
-                for feature in features:
-                    processed = self._process_feature_fixed(feature, srs, purpose)
-                    if processed:
-                        processed_features.append(processed)
-                
-                print(f"✅ FIXED WGS84 retry successful: {len(processed_features)} features")
-                
-                return {
-                    "features": processed_features,
-                    "count": len(processed_features),
-                    "service": service_url,
-                    "layer": layer_name,
-                    "purpose": purpose,
-                    "coordinate_system": srs,
-                    "success": True,
-                    "retry_method": "wgs84"
-                }
-            
-        except Exception as e:
-            print(f"❌ FIXED WGS84 retry failed: {e}")
-        
-        return {
-            "error": "Both coordinate systems failed",
-            "success": False,
-            "features": []
-        }
-    
-    def _try_broader_search(self, service_url: str, layer_name: str, search_area: Optional[Union[Dict, str]], 
-                          purpose: Optional[str], srs: str) -> Dict:
-        """FIXED: Try broader search when no features found."""
-        
-        print("🔍 FIXED: Trying broader search without filters...")
-        
-        params = {
-            'service': 'WFS',
-            'version': '2.0.0',
-            'request': 'GetFeature',
-            'typeName': layer_name,
-            'outputFormat': 'application/json',
-            'srsName': srs,
-            'count': 50  # Reduced count for broader search
-        }
-        
-        # FIXED: Use larger search area
-        if search_area and isinstance(search_area, dict) and 'center' in search_area:
-            center = search_area['center']
-            larger_radius = search_area.get('radius_km', 15) * 2  # Double the radius
-            
-            larger_search_area = {
-                'center': center,
-                'radius_km': larger_radius
-            }
-            
-            bbox = self._process_search_area_fixed(larger_search_area, srs)
-            if bbox:
-                params['bbox'] = f"{bbox},{srs}"
-                print(f"   🔍 FIXED: Using broader search area with {larger_radius}km radius")
-        
-        try:
-            response = requests.get(service_url, params=params, timeout=30)
-            
-            if response.status_code == 200:
-                data = response.json()
-                features = data.get('features', [])
-                
-                print(f"📦 FIXED Broader search returned {len(features)} features")
-                
-                if len(features) > 0:
-                    processed_features = []
-                    for feature in features:
-                        processed = self._process_feature_fixed(feature, srs, purpose)
-                        if processed:
-                            processed_features.append(processed)
-                    
-                    return {
-                        "features": processed_features,
-                        "count": len(processed_features),
-                        "service": service_url,
-                        "layer": layer_name,
-                        "purpose": purpose,
-                        "coordinate_system": srs,
-                        "success": True,
-                        "search_method": "broader_area"
-                    }
-        
-        except Exception as e:
-            print(f"❌ FIXED Broader search failed: {e}")
-        
-        return {
-            "error": "No features found even with broader search",
-            "success": False,
-            "features": [],
-            "suggestion": "Try different location or service"
-        }
-    
-    def _process_search_area_fixed(self, search_area: Union[Dict, str], srs: str) -> Optional[str]:
-        """FIXED: Process search area with proper coordinate system handling."""
-        try:
-            print(f"🔍 FIXED Processing search area: {search_area} (type: {type(search_area)})")
-            
-            # Handle dictionary format
-            if isinstance(search_area, dict) and 'center' in search_area and 'radius_km' in search_area:
+            if isinstance(search_area, dict) and 'center' in search_area:
                 center = search_area['center']
-                radius_km = search_area['radius_km']
-                
-                print(f"   🔍 FIXED Processing center + radius: {center}, {radius_km}km")
+                radius_km = search_area.get('radius_km', 1.0)
                 
                 if not isinstance(center, (list, tuple)) or len(center) != 2:
                     print(f"   ❌ Invalid center format: {center}")
-                    return None
+                    return None, None
                 
-                coord1, coord2 = center[0], center[1]
+                lat, lon = float(center[0]), float(center[1])
                 
-                # CRITICAL FIX: Better coordinate detection
-                if coord1 > 10000 and coord2 > 10000:
-                    # RD New coordinates (X, Y) - large numbers
-                    center_x, center_y = coord1, coord2
-                    print(f"   ✅ FIXED Detected RD New coordinates: X={center_x}, Y={center_y}")
+                if not (50.5 <= lat <= 53.8 and 3.0 <= lon <= 7.5):
+                    print(f"   ❌ FIXED: Coordinates outside Netherlands bounds: {lat}, {lon}")
+                    return None, None
+                
+                print(f"   ✅ FIXED: Valid Netherlands coordinates: lat={lat}, lon={lon}, radius={radius_km}km")
+                
+                if srs == "EPSG:28992" and self.transformer_to_rd:
+                    center_x, center_y = self.transformer_to_rd.transform(lon, lat)
+                    print(f"   🔄 FIXED: Converted to RD New: X={center_x:.2f}, Y={center_y:.2f}")
                     
-                    if srs == "EPSG:28992":
-                        # Use RD New directly
-                        radius_m = radius_km * 1000
-                        min_x = center_x - radius_m
-                        min_y = center_y - radius_m
-                        max_x = center_x + radius_m
-                        max_y = center_y + radius_m
-                        
-                        bbox = f"{min_x},{min_y},{max_x},{max_y}"
-                        print(f"   ✅ FIXED Calculated RD New bbox: {bbox}")
-                        return bbox
-                    else:
-                        # Convert RD New to WGS84
-                        if self.transformer_to_wgs84:
-                            lon, lat = self.transformer_to_wgs84.transform(center_x, center_y)
-                            print(f"   🔄 FIXED Converted to WGS84: lat={lat}, lon={lon}")
-                            
-                            # Calculate WGS84 bbox
-                            lat_rad = math.radians(lat)
-                            km_per_degree_lat = 111.0
-                            km_per_degree_lon = 111.0 * math.cos(lat_rad)
-                            
-                            lat_buffer = radius_km / km_per_degree_lat
-                            lon_buffer = radius_km / km_per_degree_lon
-                            
-                            min_lon = lon - lon_buffer
-                            min_lat = lat - lat_buffer
-                            max_lon = lon + lon_buffer
-                            max_lat = lat + lat_buffer
-                            
-                            bbox = f"{min_lon},{min_lat},{max_lon},{max_lat}"
-                            print(f"   ✅ FIXED Calculated WGS84 bbox: {bbox}")
-                            return bbox
-                        else:
-                            print(f"   ❌ Cannot convert RD New to WGS84")
-                            return None
-                            
-                elif 50 <= coord1 <= 54 and 3 <= coord2 <= 8:
-                    # WGS84 coordinates (lat, lon) - Netherlands bounds
-                    lat, lon = coord1, coord2
-                    print(f"   ✅ FIXED Detected WGS84 coordinates: lat={lat}, lon={lon}")
+                    if not (10000 <= center_x <= 280000 and 300000 <= center_y <= 630000):
+                        print(f"   ❌ FIXED: RD coordinates out of bounds: {center_x}, {center_y}")
+                        return None, None
                     
-                    if srs == "EPSG:28992" and self.transformer_to_rd:
-                        # Convert to RD New
-                        center_x, center_y = self.transformer_to_rd.transform(lon, lat)
-                        print(f"   🔄 FIXED Converted to RD New: X={center_x}, Y={center_y}")
-                        
-                        radius_m = radius_km * 1000
-                        min_x = center_x - radius_m
-                        min_y = center_y - radius_m
-                        max_x = center_x + radius_m
-                        max_y = center_y + radius_m
-                        
-                        bbox = f"{min_x},{min_y},{max_x},{max_y}"
-                        print(f"   ✅ FIXED Calculated RD New bbox: {bbox}")
-                        return bbox
-                    else:
-                        # Use WGS84 directly
-                        center_x, center_y = lon, lat
-                        
-                        lat_rad = math.radians(lat)
-                        km_per_degree_lat = 111.0
-                        km_per_degree_lon = 111.0 * math.cos(lat_rad)
-                        
-                        lat_buffer = radius_km / km_per_degree_lat
-                        lon_buffer = radius_km / km_per_degree_lon
-                        
-                        min_lon = center_x - lon_buffer
-                        min_lat = center_y - lat_buffer
-                        max_lon = center_x + lon_buffer
-                        max_lat = center_y + lat_buffer
-                        
-                        bbox = f"{min_lon},{min_lat},{max_lon},{max_lat}"
-                        print(f"   ✅ FIXED Calculated WGS84 bbox: {bbox}")
-                        return bbox
-                else:
-                    print(f"   ❌ Could not determine coordinate format: {center}")
-                    return None
-        
-            return None
+                    radius_m = radius_km * 1000
+                    min_x = center_x - radius_m
+                    min_y = center_y - radius_m
+                    max_x = center_x + radius_m
+                    max_y = center_y + radius_m
+                    
+                    bbox = f"{min_x},{min_y},{max_x},{max_y}"
+                    print(f"   ✅ FIXED: RD New bbox: {bbox}")
+                    return bbox, radius_km
+                    
+                elif srs == "EPSG:4326":
+                    lat_rad = math.radians(lat)
+                    km_per_degree_lat = 111.0
+                    km_per_degree_lon = 111.0 * math.cos(lat_rad)
+                    
+                    lat_buffer = radius_km / km_per_degree_lat
+                    lon_buffer = radius_km / km_per_degree_lon
+                    
+                    min_lon = lon - lon_buffer
+                    min_lat = lat - lat_buffer
+                    max_lon = lon + lon_buffer
+                    max_lat = lat + lat_buffer
+                    
+                    bbox = f"{min_lon},{min_lat},{max_lon},{max_lat}"
+                    print(f"   ✅ FIXED: WGS84 bbox: {bbox}")
+                    return bbox, radius_km
+            
+            return None, None
             
         except Exception as e:
             print(f"❌ FIXED Error processing search area: {e}")
+            return None, None
+    
+    def _build_containment_cql_filter(self, search_area: Dict, srs: str) -> Optional[str]:
+        try:
+            center = search_area['center']
+            radius_km = search_area.get('radius_km', 1.0)
+            lat, lon = float(center[0]), float(center[1])
+            
+            if srs == "EPSG:28992" and self.transformer_to_rd:
+                center_x, center_y = self.transformer_to_rd.transform(lon, lat)
+                radius_m = radius_km * 1000
+                return f"WITHIN(the_geom, POLYGON(({center_x-radius_m} {center_y-radius_m}, {center_x-radius_m} {center_y+radius_m}, {center_x+radius_m} {center_y+radius_m}, {center_x+radius_m} {center_y-radius_m}, {center_x-radius_m} {center_y-radius_m})))"
+            elif srs == "EPSG:4326":
+                lat_rad = math.radians(lat)
+                km_per_degree_lat = 111.0
+                km_per_degree_lon = 111.0 * math.cos(lat_rad)
+                lat_buffer = radius_km / km_per_degree_lat
+                lon_buffer = radius_km / km_per_degree_lon
+                min_lon = lon - lon_buffer
+                min_lat = lat - lat_buffer
+                max_lon = lon + lon_buffer
+                max_lat = lat + lat_buffer
+                return f"WITHIN(the_geom, POLYGON(({min_lon} {min_lat}, {min_lon} {max_lat}, {max_lon} {max_lat}, {max_lon} {min_lat}, {min_lon} {min_lat})))"
+            return None
+        except Exception as e:
+            print(f"❌ FIXED Error building containment CQL filter: {e}")
             return None
     
-    def _build_cql_filter_fixed(self, filters: Union[Dict, str]) -> Optional[str]:
-        """FIXED: Build CQL filter with correct syntax."""
+    def _build_cql_filter_fixed(self, filters: Union[Dict, str], is_building_request: bool) -> Optional[str]:
+        """Build CQL filter with correct attribute mapping."""
         try:
-            print(f"🔍 FIXED Building CQL filter from: {filters} (type: {type(filters)})")
-            
-            # Handle direct CQL string
+            print(f"🔍 FIXED Building CQL filter: {filters}")
             if isinstance(filters, str):
                 if filters.strip():
-                    # FIXED: Check for common syntax errors
-                    fixed_filter = self._fix_cql_syntax(filters.strip())
-                    print(f"   ✅ FIXED Using CQL string: {fixed_filter}")
-                    return fixed_filter
-                else:
-                    print(f"   ❌ Empty CQL string")
-                    return None
-            
-            # Handle dictionary format (existing logic preserved)
+                    print(f"   ✅ FIXED Using CQL string: {filters.strip()}")
+                    return filters.strip()
+                print("   ❌ Empty CQL string")
+                return None
             elif isinstance(filters, dict):
                 filter_parts = []
-                
                 if 'attribute_filters' in filters:
-                    attr_filters = filters['attribute_filters']
-                    for attr_name, condition in attr_filters.items():
+                    for attr, condition in filters['attribute_filters'].items():
                         if isinstance(condition, dict):
                             if 'min_value' in condition:
-                                filter_parts.append(f"{attr_name} >= {condition['min_value']}")
+                                filter_parts.append(f"{attr} >= {condition['min_value']}")
+                                print(f"   ✅ FIXED Added filter: {attr} >= {condition['min_value']}")
                             if 'max_value' in condition:
-                                filter_parts.append(f"{attr_name} <= {condition['max_value']}")
+                                filter_parts.append(f"{attr} <= {condition['max_value']}")
+                                print(f"   ✅ FIXED Added filter: {attr} <= {condition['max_value']}")
                             if 'equals' in condition:
-                                if isinstance(condition['equals'], str):
-                                    filter_parts.append(f"{attr_name} = '{condition['equals']}'")
-                                else:
-                                    filter_parts.append(f"{attr_name} = {condition['equals']}")
+                                value = f"'{condition['equals']}'" if isinstance(condition['equals'], str) else condition['equals']
+                                filter_parts.append(f"{attr} = {value}")
+                                print(f"   ✅ FIXED Added filter: {attr} = {value}")
                             if 'like' in condition:
-                                filter_parts.append(f"{attr_name} LIKE '%{condition['like']}%'")
+                                filter_parts.append(f"{attr} LIKE '%{condition['like']}%'")
+                                print(f"   ✅ FIXED Added filter: {attr} LIKE '%{condition['like']}%'")
                         else:
-                            if isinstance(condition, str):
-                                filter_parts.append(f"{attr_name} = '{condition}'")
-                            else:
-                                filter_parts.append(f"{attr_name} = {condition}")
+                            value = f"'{condition}'" if isinstance(condition, str) else condition
+                            filter_parts.append(f"{attr} = {value}")
+                            print(f"   ✅ FIXED Added filter: {attr} = {value}")
                 
-                if 'cql' in filters:
-                    filter_parts.append(filters['cql'])
-                
-                result = " AND ".join(filter_parts) if filter_parts else None
-                print(f"   ✅ FIXED Built CQL filter from dict: {result}")
-                return result
-            
+                return " AND ".join(filter_parts) if filter_parts else None
+            print("   ❌ Invalid filter format")
             return None
-                
         except Exception as e:
             print(f"❌ FIXED Error building CQL filter: {e}")
             return None
     
-    def _fix_cql_syntax(self, cql_filter: str) -> str:
-        """FIXED: Fix common CQL syntax errors."""
-        
-        # FIXED: Handle incorrect IN clause syntax
-        # From: bodemgebruik IN ('Hoofdweg, Spoorterrein')
-        # To:   bodemgebruik IN ('Hoofdweg', 'Spoorterrein')
-        
-        import re
-        
-        # Pattern to match: fieldname IN ('value1, value2, value3')
-        pattern = r"(\w+)\s+IN\s+\('([^']+)'\)"
-        match = re.search(pattern, cql_filter)
-        
-        if match:
-            field_name = match.group(1)
-            values_string = match.group(2)
-            
-            # Split by comma and clean up
-            values = [v.strip() for v in values_string.split(',')]
-            
-            # Create proper IN clause
-            quoted_values = "', '".join(values)
-            fixed_filter = f"{field_name} IN ('{quoted_values}')"
-            
-            print(f"   🔧 FIXED CQL syntax: {cql_filter} → {fixed_filter}")
-            return fixed_filter
-        
-        return cql_filter
-    
-    def _process_feature_fixed(self, feature: Dict, srs: str, purpose: Optional[str]) -> Optional[Dict]:
-        """FIXED: Process individual feature with coordinate conversion."""
+    def _process_feature_fixed(self, feature: Dict, srs: str, purpose: Optional[str], 
+                             search_center: Optional[List[float]], is_building: bool,
+                             radius_km: Optional[float], strict_containment: bool) -> Optional[Dict]:
         try:
             properties = feature.get('properties', {})
             geometry = feature.get('geometry', {})
             
-            print(f"   🔍 Processing feature with geometry: {geometry.get('type', 'Unknown')}")
-            
-            # FIXED: Convert geometry to WGS84 if needed for frontend
             if srs == "EPSG:28992" and self.transformer_to_wgs84:
-                print(f"   🔄 Converting geometry from RD New to WGS84...")
                 geometry = self._convert_geometry_to_wgs84_fixed(geometry)
             
-            # Calculate centroid
             centroid = self._calculate_centroid_fixed(geometry)
             if not centroid:
-                print(f"   ❌ Could not calculate centroid for feature")
+                print(f"   ❌ Could not calculate centroid")
                 return None
             
             lat, lon = centroid
-            print(f"   ✅ Feature centroid: {lat:.6f}, {lon:.6f}")
             
-            # FIXED: Create enhanced feature name
-            feature_name = self._create_feature_name(properties)
+            if not (50.5 <= lat <= 53.8 and 3.0 <= lon <= 7.5):
+                print(f"   ❌ FIXED: Centroid outside Netherlands: {lat:.6f}, {lon:.6f}")
+                return None
+            
+            if search_center and radius_km and strict_containment:
+                center_lat, center_lon = search_center[0], search_center[1]
+                distance_km = self._calculate_distance(lat, lon, center_lat, center_lon)
+                
+                if distance_km > radius_km:
+                    print(f"   ❌ FIXED: Feature outside radius: {distance_km:.2f}km > {radius_km}km")
+                    return None
+                print(f"   ✅ FIXED: Feature within radius: {distance_km:.2f}km <= {radius_km}km")
+            
+            if is_building:
+                feature_name = self._create_building_name(properties)
+                feature_description = self._create_building_description(properties)
+            else:
+                feature_name = self._create_feature_name(properties)
+                feature_description = self._create_feature_description(properties)
             
             return {
                 "type": "Feature",
@@ -564,51 +370,104 @@ FIXED ISSUES:
                 "lon": float(lon),
                 "centroid": {"lat": lat, "lon": lon},
                 "processing_purpose": purpose,
-                "description": self._create_feature_description(properties)
+                "description": feature_description,
+                "is_building": is_building
             }
             
         except Exception as e:
             print(f"❌ FIXED Error processing feature: {e}")
             return None
     
+    def _create_building_name(self, properties: Dict) -> str:
+        year = properties.get('bouwjaar')
+        if year and str(year).isdigit():
+            year = int(year)
+            if year < 1900:
+                age_category = "Historic"
+            elif year < 1950:
+                age_category = "Pre-war"
+            elif year < 1980:
+                age_category = "Post-war"
+            elif year < 2000:
+                age_category = "Late 20th Century"
+            else:
+                age_category = "Modern"
+            return f"{age_category} Building ({year})"
+        return "Building (unknown age)"
+    
+    def _create_building_description(self, properties: Dict) -> str:
+        desc_parts = []
+        if year := properties.get('bouwjaar'):
+            desc_parts.append(f"Built: {year}")
+        if status := properties.get('status'):
+            desc_parts.append(f"Status: {status}")
+        if area := properties.get('oppervlakte_min'):
+            desc_parts.append(f"Area: {area}m²")
+        return " | ".join(desc_parts) or "Building feature"
+    
     def _create_feature_name(self, properties: Dict) -> str:
-        """Create meaningful feature name."""
-        # Land use features
         if 'bodemgebruik' in properties:
             return f"Land Use: {properties['bodemgebruik']}"
-        elif 'categorie' in properties:
-            return f"Category: {properties['categorie']}"
-        else:
-            return "Land Use Feature"
-
+        elif 'naam' in properties:
+            return properties['naam']
+        return "Feature"
+    
     def _create_feature_description(self, properties: Dict) -> str:
-        """Create meaningful feature description."""
         desc_parts = []
-        
         if 'bodemgebruik' in properties:
             desc_parts.append(f"Type: {properties['bodemgebruik']}")
-        
-        if 'categorie' in properties:
-            desc_parts.append(f"Category: {properties['categorie']}")
-        
-        if 'bg2015' in properties:
-            desc_parts.append(f"Code: {properties['bg2015']}")
-        
-        return " | ".join(desc_parts) if desc_parts else "Land use feature"
-
+        if 'oppervlakte' in properties:
+            desc_parts.append(f"Area: {properties['oppervlakte']}")
+        return " | ".join(desc_parts) or "Geographic feature"
+    
+    def _generate_building_legend(self, features: List[Dict]) -> Dict:
+        try:
+            legend_data = {
+                "layer_type": "buildings",
+                "title": "🏠 Buildings by Age",
+                "categories": [],
+                "statistics": {}
+            }
+            building_years = [int(f.get('properties', {}).get('bouwjaar')) for f in features if f.get('properties', {}).get('bouwjaar') and str(f.get('properties', {}).get('bouwjaar')).isdigit()]
+            if not building_years:
+                return legend_data
+            
+            age_categories = [
+                {"label": "Historic (< 1900)", "color": "#8B0000", "min_year": 0, "max_year": 1899, "count": 0},
+                {"label": "Pre-war (1900-1949)", "color": "#FF4500", "min_year": 1900, "max_year": 1949, "count": 0},
+                {"label": "Post-war (1950-1979)", "color": "#32CD32", "min_year": 1950, "max_year": 1979, "count": 0},
+                {"label": "Late 20th C (1980-1999)", "color": "#1E90FF", "min_year": 1980, "max_year": 1999, "count": 0},
+                {"label": "Modern (2000+)", "color": "#FF1493", "min_year": 2000, "max_year": 9999, "count": 0}
+            ]
+            
+            for year in building_years:
+                for category in age_categories:
+                    if category["min_year"] <= year <= category["max_year"]:
+                        category["count"] += 1
+                        break
+            
+            legend_data["categories"] = [cat for cat in age_categories if cat["count"] > 0]
+            legend_data["statistics"] = {
+                "total_buildings": len(features),
+                "buildings_with_year": len(building_years),
+                "oldest_building": min(building_years) if building_years else None,
+                "newest_building": max(building_years) if building_years else None,
+                "average_year": int(sum(building_years) / len(building_years)) if building_years else None
+            }
+            return legend_data
+        except Exception as e:
+            print(f"❌ Error generating building legend: {e}")
+            return {"layer_type": "buildings", "title": "🏠 Buildings", "categories": []}
+    
     def _convert_geometry_to_wgs84_fixed(self, geometry: Dict) -> Dict:
-        """FIXED: Convert geometry from RD New to WGS84 with better error handling."""
         try:
             if not self.transformer_to_wgs84:
-                print(f"   ⚠️ No transformer available for coordinate conversion")
                 return geometry
-            
             if geometry['type'] == 'Point':
                 coords = geometry['coordinates']
                 if len(coords) >= 2:
                     wgs84 = self.transformer_to_wgs84.transform(coords[0], coords[1])
                     return {'type': 'Point', 'coordinates': [wgs84[0], wgs84[1]]}
-            
             elif geometry['type'] == 'Polygon':
                 wgs84_coords = []
                 for ring in geometry['coordinates']:
@@ -619,70 +478,46 @@ FIXED ISSUES:
                             wgs84_ring.append([wgs84[0], wgs84[1]])
                     wgs84_coords.append(wgs84_ring)
                 return {'type': 'Polygon', 'coordinates': wgs84_coords}
-            
-            elif geometry['type'] == 'MultiPolygon':
-                wgs84_coords = []
-                for polygon in geometry['coordinates']:
-                    wgs84_polygon = []
-                    for ring in polygon:
-                        wgs84_ring = []
-                        for coord in ring:
-                            if len(coord) >= 2:
-                                wgs84 = self.transformer_to_wgs84.transform(coord[0], coord[1])
-                                wgs84_ring.append([wgs84[0], wgs84[1]])
-                        wgs84_polygon.append(wgs84_ring)
-                    wgs84_coords.append(wgs84_polygon)
-                return {'type': 'MultiPolygon', 'coordinates': wgs84_coords}
-            
             return geometry
-            
         except Exception as e:
-            print(f"❌ FIXED Error converting geometry: {e}")
+            print(f"❌ Error converting geometry: {e}")
             return geometry
-
+    
     def _calculate_centroid_fixed(self, geometry: Dict) -> Optional[Tuple[float, float]]:
-        """FIXED: Calculate centroid with support for MultiPolygon."""
         try:
             if geometry['type'] == 'Point':
                 coords = geometry['coordinates']
                 if len(coords) >= 2:
-                    return coords[1], coords[0]  # lat, lon
-            
+                    return coords[1], coords[0]
             elif geometry['type'] == 'Polygon':
                 coords = geometry['coordinates'][0]
                 if coords and len(coords) > 0:
-                    avg_x = sum(c[0] for c in coords if len(c) >= 2) / len(coords)
-                    avg_y = sum(c[1] for c in coords if len(c) >= 2) / len(coords)
-                    return avg_y, avg_x  # lat, lon
-            
-            elif geometry['type'] == 'MultiPolygon':
-                # Use first polygon for centroid
-                if geometry['coordinates'] and len(geometry['coordinates']) > 0:
-                    first_polygon = geometry['coordinates'][0]
-                    if first_polygon and len(first_polygon) > 0:
-                        coords = first_polygon[0]
-                        if coords and len(coords) > 0:
-                            avg_x = sum(c[0] for c in coords if len(c) >= 2) / len(coords)
-                            avg_y = sum(c[1] for c in coords if len(c) >= 2) / len(coords)
-                            return avg_y, avg_x  # lat, lon
-            
+                    valid_coords = [c for c in coords if len(c) >= 2]
+                    if valid_coords:
+                        avg_x = sum(c[0] for c in valid_coords) / len(valid_coords)
+                        avg_y = sum(c[1] for c in valid_coords) / len(valid_coords)
+                        return avg_y, avg_x
             return None
-            
         except Exception as e:
             print(f"❌ Error calculating centroid: {e}")
             return None
     
+    def _calculate_distance(self, lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+        try:
+            R = 6371
+            lat1_rad = math.radians(lat1)
+            lat2_rad = math.radians(lat2)
+            delta_lat = math.radians(lat2 - lat1)
+            delta_lon = math.radians(lon2 - lon1)
+            a = (math.sin(delta_lat / 2) ** 2 + 
+                 math.cos(lat1_rad) * math.cos(lat2_rad) * 
+                 math.sin(delta_lon / 2) ** 2)
+            c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+            return R * c
+        except Exception:
+            return 999.0
 
-
-
-
-# Keep the existing FlexibleSpatialAnalysisTool unchanged
 class FlexibleSpatialAnalysisTool(Tool):
-    """
-    Flexible tool for spatial analysis operations.
-    The AI decides what type of analysis to perform and how to combine datasets.
-    """
-    
     name = "perform_spatial_analysis"
     description = """Perform flexible spatial analysis on geospatial datasets.
 
@@ -721,8 +556,6 @@ The AI determines what analysis operations to perform based on the user's query.
     def forward(self, datasets: Dict, analysis_operations: Dict, 
                 reference_point: Optional[Dict] = None, 
                 output_requirements: Optional[Dict] = None) -> Dict:
-        """Perform flexible spatial analysis."""
-        
         try:
             print(f"🧮 Flexible spatial analysis")
             print(f"   Datasets: {list(datasets.keys())}")
@@ -730,7 +563,6 @@ The AI determines what analysis operations to perform based on the user's query.
             
             results = {}
             
-            # Process each analysis operation
             for operation_name, operation_config in analysis_operations.items():
                 print(f"   🔄 Performing {operation_name}")
                 
@@ -760,12 +592,10 @@ The AI determines what analysis operations to perform based on the user's query.
                     )
                 
                 else:
-                    # Custom analysis - let AI define the operation
                     results[operation_name] = self._custom_analysis(
                         datasets, operation_config, operation_name
                     )
             
-            # Format final output
             final_output = self._format_analysis_output(results, output_requirements)
             
             return {
@@ -781,7 +611,6 @@ The AI determines what analysis operations to perform based on the user's query.
             }
     
     def _proximity_analysis(self, datasets: Dict, config: Dict, reference_point: Optional[Dict]) -> Dict:
-        """Perform proximity analysis between datasets."""
         try:
             primary_dataset = config.get('primary_dataset')
             secondary_datasets = config.get('secondary_datasets', [])
@@ -799,7 +628,6 @@ The AI determines what analysis operations to perform based on the user's query.
                     'nearest_features': {}
                 }
                 
-                # Calculate distance to reference point if provided
                 if reference_point and 'center' in reference_point:
                     ref_lat, ref_lon = reference_point['center']
                     distance = self._calculate_distance(
@@ -807,7 +635,6 @@ The AI determines what analysis operations to perform based on the user's query.
                     )
                     feature_result['distance_to_reference'] = distance
                 
-                # Calculate proximity to secondary datasets
                 for secondary_name in secondary_datasets:
                     if secondary_name in datasets:
                         secondary_features = datasets[secondary_name].get('features', [])
@@ -839,31 +666,23 @@ The AI determines what analysis operations to perform based on the user's query.
             return {"error": f"Proximity analysis failed: {str(e)}"}
     
     def _ranking_analysis(self, datasets: Dict, config: Dict) -> Dict:
-        """Perform ranking analysis."""
-        # Implementation similar to previous version...
         pass
     
     def _scoring_analysis(self, datasets: Dict, config: Dict, reference_point: Optional[Dict]) -> Dict:
-        """Perform scoring analysis."""
-        # Implementation similar to previous version...
         pass
     
     def _filtering_analysis(self, datasets: Dict, config: Dict) -> Dict:
-        """Perform filtering analysis."""
         pass
     
     def _combining_analysis(self, datasets: Dict, config: Dict) -> Dict:
-        """Perform combining analysis."""
         pass
     
     def _custom_analysis(self, datasets: Dict, config: Dict, operation_name: str) -> Dict:
-        """Perform custom analysis operation."""
         return {"message": f"Custom analysis '{operation_name}' performed", "config": config}
     
     def _calculate_distance(self, lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-        """Calculate distance using Haversine formula."""
         try:
-            R = 6371  # Earth's radius in kilometers
+            R = 6371
             lat1_rad = math.radians(lat1)
             lat2_rad = math.radians(lat2)
             delta_lat = math.radians(lat2 - lat1)
@@ -879,27 +698,21 @@ The AI determines what analysis operations to perform based on the user's query.
             return 999.0
     
     def _format_analysis_output(self, results: Dict, output_requirements: Optional[Dict]) -> Dict:
-        """Format analysis output based on requirements."""
         try:
-            # Get the final processed features
             final_features = []
             
-            # Find the most processed dataset (usually the last operation)
             for operation_name, operation_result in results.items():
                 if isinstance(operation_result, dict) and 'features' in operation_result:
                     final_features = operation_result['features']
             
-            # Create enhanced features for map display
             enhanced_features = []
             for i, feature in enumerate(final_features):
-                # Create name and description
                 rank = i + 1 if 'rank' in feature or 'analysis_score' in feature else None
                 
                 name_parts = []
                 if rank:
                     name_parts.append(f"#{rank}")
                 
-                # Add area if available
                 area_m2 = feature.get('properties', {}).get('kadastraleGrootteWaarde', 0)
                 if area_m2 > 0:
                     area_ha = area_m2 / 10000
@@ -907,7 +720,6 @@ The AI determines what analysis operations to perform based on the user's query.
                 
                 name = " ".join(name_parts) if name_parts else f"Feature {i+1}"
                 
-                # Create description
                 desc_parts = []
                 if 'analysis_score' in feature:
                     desc_parts.append(f"Score: {feature['analysis_score']:.1f}")
@@ -915,7 +727,6 @@ The AI determines what analysis operations to perform based on the user's query.
                 if 'distance_to_reference' in feature:
                     desc_parts.append(f"Distance: {feature['distance_to_reference']:.2f}km")
                 
-                # Add proximity info
                 proximity_scores = feature.get('proximity_scores', {})
                 for dataset, distance in proximity_scores.items():
                     desc_parts.append(f"{dataset}: {distance:.2f}km")
@@ -949,6 +760,4 @@ The AI determines what analysis operations to perform based on the user's query.
         except Exception as e:
             return {"error": f"Output formatting failed: {str(e)}"}
 
-
-# Export tools
 __all__ = ["FlexibleSpatialDataTool", "FlexibleSpatialAnalysisTool"]

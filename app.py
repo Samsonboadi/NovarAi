@@ -31,12 +31,12 @@ def load_simple_system_prompt() -> dict:
     """Load the system prompt from YAML file."""
     try:
         # Try to load from YAML file first
-        with open('static/system_prompt.yml', 'r', encoding='utf-8') as file:
+        with open('static/pdok_spatial_prompt_template.yml', 'r', encoding='utf-8') as file:
             config = yaml.safe_load(file)
-            print("✅ Loaded system prompt from system_prompt.yml")
+            print("✅ Loaded system prompt from pdok_spatial_prompt_template.yml")
             return config
     except FileNotFoundError:
-        print("⚠️ system_prompt.yml not found, using embedded prompt")
+        print("⚠️ pdok_spatial_prompt_template.yml not found, using embedded prompt")
         # Fallback to embedded prompt if file doesn't exist
         return {
             "system_prompt": """You are an intelligent PDOK spatial analysis assistant specializing in Dutch geospatial data.
@@ -259,41 +259,15 @@ def query():
     try:
         print("🚀 Running simple intelligent agent...")
         
-        # Very simple prompt - trust the AI's intelligence
-        simple_prompt = f"""
-        User query: "{query_text}"
+        # Use the loaded system prompt
+        prompt_config = load_simple_system_prompt()
+        system_prompt = prompt_config["system_prompt"].format(task=query_text)
         
-        Help the user with their spatial data request. Be intelligent and efficient.
-        
-        IMPORTANT: You MUST use the actual tools available to you:
-        1. find_location_coordinates() - to get real coordinates
-        2. discover_pdok_services() - to get real service info  
-        3. fetch_pdok_data() - to get real geospatial features
-        
-        DO NOT simulate or mock the data - use the actual tools to get real PDOK data!
-        
-        CRITICAL OUTPUT FORMAT:
-        When you call final_answer(), return ONLY the JSON object - no explanatory text before or after!
-        
-        Correct format:
-        final_answer(json.dumps({{
-            "text_description": "your analysis text here",
-            "geojson_data": features_from_fetch_pdok_data,
-            "search_location": location_coords,
-            "layer_type": "service_name"
-        }}))
-        
-        Do NOT add any text like "Here is the data I found:" or explanations after final_answer().
-        Just return the JSON and stop.
-        
-        Maximum 3 tool calls. Always show the real data you find.
-        """
-        
-        result = agent.run(simple_prompt)
+        result = agent.run(system_prompt)
         
         print(f"Agent completed processing")
         
-        # Simplified response processing - AI returns consistent JSON format
+        # Process response
         if isinstance(result, dict):
             structured_response = result
         else:
@@ -301,14 +275,11 @@ def query():
             print(f"🔍 Processing agent result...")
             
             try:
-                # The AI should return clean JSON, so try direct parsing first
                 if result_text.strip().startswith('{') and result_text.strip().endswith('}'):
                     structured_response = json.loads(result_text.strip())
                     print(f"✅ Parsed clean JSON directly")
                 else:
-                    # Look for the JSON object in the response
                     import re
-                    # Find content between { and } that contains our expected structure
                     json_pattern = r'\{[^{}]*?"text_description"[^{}]*?"geojson_data".*?\}'
                     json_match = re.search(json_pattern, result_text, re.DOTALL)
                     
@@ -317,7 +288,6 @@ def query():
                         structured_response = json.loads(json_str)
                         print(f"✅ Extracted JSON from response")
                     else:
-                        # Fallback: treat as text response
                         structured_response = {"text_description": result_text}
                         print(f"⚠️ No JSON found, treating as text response")
                         
@@ -334,20 +304,18 @@ def query():
         search_location = structured_response.get('search_location')
         layer_type = structured_response.get('layer_type', 'features')
         
-        # Validate features more thoroughly
+        # Validate features
         valid_features = []
         if isinstance(geojson_data, list):
             print(f"🔍 Validating {len(geojson_data)} features...")
             
             for i, feature in enumerate(geojson_data):
                 if isinstance(feature, dict):
-                    # Check for required mapping fields
                     has_coords = ('lat' in feature and 'lon' in feature and
-                                feature.get('lat') != 0 and feature.get('lon') != 0)
+                                  feature.get('lat') != 0 and feature.get('lon') != 0)
                     has_geometry = 'geometry' in feature
                     
                     if has_coords and has_geometry:
-                        # Validate coordinates are in Netherlands bounds
                         lat, lon = feature['lat'], feature['lon']
                         if 50.0 <= lat <= 54.0 and 3.0 <= lon <= 8.0:
                             valid_features.append(feature)
@@ -370,12 +338,12 @@ def query():
         current_map_state["layer_type"] = layer_type
         current_map_state["search_location"] = search_location
         
-        # Create simple legend
+        # Create legend
         legend_data = None
         if valid_features:
             legend_data = create_flexible_legend_data(valid_features, layer_type)
         
-        # Fallback location extraction
+        # Fallback location
         if not search_location and valid_features:
             search_location = extract_search_location_from_response(response_text, valid_features)
             current_map_state["search_location"] = search_location
@@ -401,7 +369,6 @@ def query():
     finally:
         print("🎉 SIMPLE PROCESSING COMPLETED")
         print("="*50 + "\n")
-
 @app.route('/api/map-state', methods=['GET'])
 def get_map_state():
     """Get current map state."""
