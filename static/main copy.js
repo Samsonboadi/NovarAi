@@ -184,6 +184,68 @@ try {
         return null;
     };
 
+
+
+
+    function debugMapFeatures(features) {
+        console.log("=== MAP FEATURES DEBUG ===");
+        console.log("Number of features:", features?.length || 0);
+        
+        if (!features || !Array.isArray(features) || features.length === 0) {
+            console.log("❌ No features to display");
+            return false;
+        }
+        
+        console.log("✅ Features array is valid");
+        
+        // Check first feature
+        const firstFeature = features[0];
+        console.log("First feature:", firstFeature);
+        console.log("First feature type:", typeof firstFeature);
+        console.log("First feature keys:", Object.keys(firstFeature));
+        
+        // Check required fields
+        const requiredFields = ['type', 'name', 'lat', 'lon', 'geometry'];
+        const missingFields = requiredFields.filter(field => !(field in firstFeature));
+        
+        if (missingFields.length > 0) {
+            console.log("❌ Missing required fields:", missingFields);
+            return false;
+        }
+        
+        console.log("✅ All required fields present");
+        
+        // Check coordinates
+        const lat = firstFeature.lat;
+        const lon = firstFeature.lon;
+        console.log("Coordinates:", lat, lon);
+        
+        if (lat === 0 || lon === 0) {
+            console.log("❌ Invalid coordinates (zero values)");
+            return false;
+        }
+        
+        if (lat < 50 || lat > 54 || lon < 3 || lon > 8) {
+            console.log("⚠️ Coordinates outside Netherlands bounds");
+        }
+        
+        // Check geometry
+        const geometry = firstFeature.geometry;
+        console.log("Geometry:", geometry);
+        
+        if (!geometry || !geometry.type || !geometry.coordinates) {
+            console.log("❌ Invalid geometry");
+            return false;
+        }
+        
+        console.log("✅ Geometry is valid");
+        console.log("=========================");
+        
+        return true;
+    }
+
+
+
     // Simple but robust Statistics Component (based on working test)
     const EnhancedMapStatistics = ({ features }) => {
         console.log("EnhancedMapStatistics rendering with features:", features?.length || 0);

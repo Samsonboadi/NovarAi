@@ -2,17 +2,17 @@
 
 #from .kadaster_tool import KadasterBRKTool, ContactHistoryTool
 from tools.enhanced_pdok_location_tool import IntelligentLocationSearchTool, SpecializedAddressSearchTool
-from .pdok_intelligent_agent_tool import EnhancedPDOKIntelligentAgent, SmartServiceDiscoveryTool
-from .pdok_modular_tools import PDOKLocationSearchTool 
+#from .pdok_intelligent_agent_tool import EnhancedPDOKIntelligentAgent, SmartServiceDiscoveryTool
+#from .pdok_modular_tools import PDOKLocationSearchTool 
 from tools.coordinate_conversion_tool import CoordinateConversionTool , CreateRDBoundingBoxTool
 # Import the NEW flexible PDOK tools
-from .pdok_service_discovery_tool import (
-    PDOKServiceDiscoveryTool,
-    PDOKDataRequestTool,
-    PDOKDataFilterTool,
-    PDOKMapDisplayTool,
-    PDOKBuildingsFlexibleTool
-)
+# from .pdok_service_discovery_tool import (
+#     PDOKServiceDiscoveryTool,
+#     PDOKDataRequestTool,
+#     PDOKDataFilterTool,
+#     PDOKMapDisplayTool,
+#     PDOKBuildingsFlexibleTool
+# )
 
 
 from tools.ai_intelligent_tools import (
@@ -53,8 +53,8 @@ __all__ = [
     #"PDOKDataFilterTool", 
     #"PDOKMapDisplayTool",
     #"PDOKBuildingsFlexibleTool",
-    "EnhancedPDOKIntelligentAgent",
-    "SmartServiceDiscoveryTool",
+    #"EnhancedPDOKIntelligentAgent",
+    #"SmartServiceDiscoveryTool",
     "IntelligentServiceDiscoveryTool",
     "AILocationCoordinatorTool",
     "AIDrivenPDOKAgent",

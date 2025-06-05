@@ -10,7 +10,7 @@ from typing import Dict, List, Optional, Union, Tuple
 
 class PDOKServiceDiscoveryTool(Tool):
     """
-    Service discovery tool that the AI can use to understand what endpoints are available.
+    Enhanced service discovery tool that the AI can use to understand what endpoints are available.
     The AI will call this to learn about PDOK services before making decisions.
     """
     
@@ -21,17 +21,18 @@ This tool helps the AI understand what PDOK services and layers are available.
 The AI should use this to learn about available endpoints before constructing queries.
 
 Returns information about:
-- Available WFS services (BAG, BGT, BRK, CBS)
+- Available WFS services (BAG, BGT, BRK, CBS, Cadastral Map, Natura 2000)
 - Layers within each service
 - Capabilities and feature types
 - Service availability status
+- Enhanced guidance for service selection
 
 The AI can then use this information to select appropriate services and construct API calls."""
     
     inputs = {
         "service_name": {
             "type": "string", 
-            "description": "Specific service to check (bag, bgt, brk, cbs) or 'all' for all services",
+            "description": "Specific service to check (bag, bgt, brk, cbs, cadastral, natura2000) or 'all' for all services",
             "nullable": True
         }
     }
@@ -40,31 +41,49 @@ The AI can then use this information to select appropriate services and construc
     
     def __init__(self):
         super().__init__()
-        # Known PDOK services for the AI to discover
+        # Enhanced PDOK services for the AI to discover
         self.services = {
             "bag": {
                 "name": "BAG - Buildings and Addresses",
                 "url": "https://service.pdok.nl/lv/bag/wfs/v2_0",
                 "description": "Dutch Buildings and Addresses Database",
-                "typical_use": "Buildings (panden), addresses (nummeraanduiding), residential objects (verblijfsobject)"
+                "typical_use": "Buildings (panden), addresses (nummeraanduiding), residential objects (verblijfsobject)",
+                "keywords": ["buildings", "addresses", "residential", "properties"]
             },
             "bgt": {
                 "name": "BGT - Large Scale Topography", 
                 "url": "https://service.pdok.nl/lv/bgt/wfs/v1_0",
                 "description": "Detailed topographic features",
-                "typical_use": "Building surfaces, roads, water features, land use"
+                "typical_use": "Building surfaces, roads, water features, land use",
+                "keywords": ["topography", "roads", "water", "land use", "surfaces"]
             },
             "brk": {
                 "name": "BRK - Cadastral Registry",
                 "url": "https://service.pdok.nl/lv/brk/wfs/v2_0",
                 "description": "Land parcels and ownership information",
-                "typical_use": "Land parcels (perceel), ownership rights (zakelijkrecht)"
+                "typical_use": "Land parcels (perceel), ownership rights (zakelijkrecht)",
+                "keywords": ["ownership", "rights", "parcels", "cadastral registry"]
             },
             "cbs": {
                 "name": "CBS - Statistics Netherlands",
                 "url": "https://service.pdok.nl/cbs/wijkenbuurten/wfs/v1_0",
                 "description": "Administrative boundaries and statistics",
-                "typical_use": "Municipalities (gemeenten), districts (wijken), neighborhoods (buurten)"
+                "typical_use": "Municipalities (gemeenten), districts (wijken), neighborhoods (buurten)",
+                "keywords": ["statistics", "boundaries", "municipalities", "districts", "neighborhoods"]
+            },
+            "cadastral": {
+                "name": "Cadastral Map - Kadastrale Kaart",
+                "url": "https://service.pdok.nl/kadaster/kadastralekaart/wfs/v5_0",
+                "description": "Overview of cadastral parcel locations in the Netherlands. Functions as a link between terrain and registration, often serves as a reference for users.",
+                "typical_use": "Cadastral parcels (kadastrale percelen), cadastral boundaries, building outlines, address ranges, public space names",
+                "keywords": ["cadastral", "parcels", "boundaries", "kadaster", "terrain", "reference", "quality labels"]
+            },
+            "natura2000": {
+                "name": "Natura 2000 - Protected Nature Areas",
+                "url": "https://service.pdok.nl/rvo/natura2000/wfs/v1_0",
+                "description": "Natura 2000 is the coherent network of protected natural areas in the European Union consisting of Bird Directive and Habitat Directive areas.",
+                "typical_use": "Protected nature areas, Bird Directive areas, Habitat Directive areas, nature monuments",
+                "keywords": ["natura2000", "protected areas", "nature", "habitat", "bird directive", "conservation", "environment"]
             }
         }
     
@@ -93,8 +112,16 @@ The AI can then use this information to select appropriate services and construc
                     "ai_guidance": {
                         "for_buildings": "Use 'bag' service with layers like 'bag:pand'",
                         "for_addresses": "Use 'bag' service with 'bag:nummeraanduiding'",
-                        "for_parcels": "Use 'brk' service with 'brk:perceel'",
-                        "for_boundaries": "Use 'cbs' service for administrative boundaries"
+                        "for_parcels": "Use 'brk' service with 'brk:perceel' or 'cadastral' for visual parcel boundaries",
+                        "for_boundaries": "Use 'cbs' service for administrative boundaries",
+                        "for_cadastral_map": "Use 'cadastral' service for detailed cadastral parcel visualization and reference",
+                        "for_nature_protection": "Use 'natura2000' service for protected natural areas and conservation zones",
+                        "for_environmental_analysis": "Combine 'natura2000' with other services for environmental impact assessment"
+                    },
+                    "service_selection_tips": {
+                        "cadastral_vs_brk": "Use 'cadastral' for visual/mapping purposes, 'brk' for ownership/legal information",
+                        "nature_queries": "Use 'natura2000' for protected areas, environmental regulations, and conservation planning",
+                        "reference_mapping": "Use 'cadastral' as a base layer for overlaying other spatial information"
                     }
                 }
             
@@ -108,17 +135,22 @@ The AI can then use this information to select appropriate services and construc
                         "capabilities": capabilities,
                         "available": not capabilities.get('error'),
                         "layers": capabilities.get('layers', [])
-                    }
+                    },
+                    "usage_recommendations": self._get_usage_recommendations(service_name)
                 }
             
             else:
-                return {"error": f"Unknown service: {service_name}. Available: {list(self.services.keys())}"}
+                available_services = list(self.services.keys())
+                return {
+                    "error": f"Unknown service: {service_name}. Available services: {available_services}",
+                    "available_services": available_services
+                }
                 
         except Exception as e:
             return {"error": f"Service discovery error: {str(e)}"}
     
     def _get_capabilities(self, service_url: str) -> Dict:
-        """Get WFS capabilities for a service."""
+        """Get WFS capabilities for a service with enhanced parsing."""
         try:
             params = {
                 'service': 'WFS',
@@ -131,6 +163,9 @@ The AI can then use this information to select appropriate services and construc
             
             # Parse XML to extract layer info
             root = ET.fromstring(response.content)
+            
+            # Extract service information
+            service_info = self._extract_service_info(root)
             
             layers = []
             for feature_type in root.iter():
@@ -150,11 +185,77 @@ The AI can then use this information to select appropriate services and construc
             return {
                 "layers": layers,
                 "layer_count": len(layers),
-                "service_operational": True
+                "service_operational": True,
+                "service_info": service_info
             }
             
         except Exception as e:
             return {"error": f"Could not get capabilities: {str(e)}"}
+    
+    def _extract_service_info(self, root) -> Dict:
+        """Extract additional service information from capabilities XML."""
+        service_info = {}
+        
+        try:
+            # Extract service identification
+            service_id = root.find('.//{http://www.opengis.net/ows/1.1}ServiceIdentification')
+            if service_id is not None:
+                title_elem = service_id.find('.//{http://www.opengis.net/ows/1.1}Title')
+                abstract_elem = service_id.find('.//{http://www.opengis.net/ows/1.1}Abstract')
+                
+                if title_elem is not None:
+                    service_info['title'] = title_elem.text
+                if abstract_elem is not None:
+                    service_info['abstract'] = abstract_elem.text
+                
+                # Extract keywords
+                keywords = []
+                for keyword_elem in service_id.findall('.//{http://www.opengis.net/ows/1.1}Keyword'):
+                    if keyword_elem.text:
+                        keywords.append(keyword_elem.text)
+                service_info['keywords'] = keywords
+        
+        except Exception as e:
+            service_info['extraction_error'] = str(e)
+        
+        return service_info
+    
+    def _get_usage_recommendations(self, service_name: str) -> Dict:
+        """Provide specific usage recommendations for each service."""
+        recommendations = {
+            "bag": {
+                "best_for": ["Finding building information", "Address lookup", "Property analysis"],
+                "common_layers": ["bag:pand", "bag:nummeraanduiding", "bag:verblijfsobject"],
+                "tips": "Use spatial filters for location-based queries"
+            },
+            "bgt": {
+                "best_for": ["Detailed topographic analysis", "Infrastructure mapping", "Land use studies"],
+                "common_layers": ["Various topographic feature layers"],
+                "tips": "High detail level - use appropriate scale for performance"
+            },
+            "brk": {
+                "best_for": ["Ownership research", "Legal parcel information", "Property rights"],
+                "common_layers": ["brk:perceel", "brk:zakelijkrecht"],
+                "tips": "Contains legal/ownership data - complement with cadastral for visualization"
+            },
+            "cbs": {
+                "best_for": ["Administrative boundaries", "Statistical analysis", "Demographic studies"],
+                "common_layers": ["Municipality, district, and neighborhood layers"],
+                "tips": "Good for regional analysis and administrative context"
+            },
+            "cadastral": {
+                "best_for": ["Visual parcel mapping", "Reference base layer", "Cadastral visualization"],
+                "common_layers": ["Cadastral parcels", "Boundaries", "Building outlines"],
+                "tips": "Ideal as base layer for other spatial data - high quality reference mapping"
+            },
+            "natura2000": {
+                "best_for": ["Environmental protection analysis", "Conservation planning", "Protected area identification"],
+                "common_layers": ["Protected nature areas", "Habitat directive areas", "Bird directive areas"],
+                "tips": "Essential for environmental impact assessments and conservation projects"
+            }
+        }
+        
+        return recommendations.get(service_name, {"best_for": [], "common_layers": [], "tips": ""})
 
 
 class LocationSearchTool(Tool):

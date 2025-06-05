@@ -442,136 +442,134 @@ def query():
         
         # MINIMAL context prompt - let AI decide everything
         minimal_context_prompt = f"""
-        User query: "{query_text}"
+            User query: "{query_text}"
 
-        Current map context:
-        - Map center: {map_center[1]:.4f}°N, {map_center[0]:.4f}°E  
-        - Zoom level: {map_zoom}
-        - Features currently on map: {len(current_features)}
+            Current map context:
+            - Map center: {map_center[1]:.4f}°N, {map_center[0]:.4f}°E  
+            - Zoom level: {map_zoom}
+            - Features currently on map: {len(current_features)}
 
-        You are an intelligent AI assistant with access to tools for spatial analysis and geospatial data.
+            You are an intelligent AI assistant with access to tools for spatial analysis and geospatial data.
 
-        🎯 FIRST: EXPLAIN YOUR EXECUTION PLAN
-        Before using any tools, you MUST write out your planned steps as a COMMENT in this format:
+            🎯 FIRST: EXPLAIN YOUR EXECUTION PLAN
+            Before using any tools, you MUST write out your planned steps as a COMMENT in this format:
 
-        ```python
-        # EXECUTION PLAN:
-        # 1. Analysis: Find out the primary dataset needed (e.g., parcels, buildings), and the EXCLUSION or INCLUSION criteria (e.g., protected areas, existing buildings, forests, etc.).
-        # 2. Discovery: [Which services to discover for each dataset]
-        # 3. Coordinates: [Address to geocode or "N/A if no location"]
-        # 4. Data Requests: [List each dataset request separately]
-        # 5. Spatial Analysis: [How to combine/filter datasets]
-        # 6. Expected Result: [What you expect to return to user]
-        #
-        # Now executing the plan:
-        ```
+            ```python
+            # EXECUTION PLAN:
+            # 1. Query Type: [What type of analysis is this - land use, parcel search, building lookup, etc.]
+            # 2. Primary Data: [What's the main dataset needed]
+            # 3. Location: [Where to search - address, coordinates, or area]  
+            # 4. Additional Data: [Any other datasets needed, or "None"]
+            # 5. Analysis: [What to do with the data - calculate area, filter, combine, etc.]
+            # 6. Expected Output: [What to return to user]
+            #
+            # Now executing the plan:
+            ```
 
-        MANDATORY WORKFLOW - Follow this exact sequence:
+            QUERY TYPE PATTERNS:
+            - Land use queries: "How much [land type]", "What percentage", "Land use distribution"
+            - Building queries: "Show buildings", "Find addresses", "Building information"  
+            - Parcel queries: "Find parcels", "Suitable land", "Available plots"
+            - Boundary queries: "Administrative boundaries", "Municipal limits"
+            - Protection queries: "Protected areas", "Nature reserves"
 
-        1. ANALYZE USER QUERY
-        - Identify what type of PRIMARY data is needed (buildings, addresses, parcels, etc.)
-        - Identify any INCLUSIVE or EXCLUSION criteria that require ADDITIONAL datasets (protected areas, existing buildings, forests, etc.)
-        - Identify specific filters mentioned (area, year, type, location, etc.)
-        - Identify the location or area of interest
-        - Determine if MULTIPLE datasets are needed for complete analysis
+            MANDATORY WORKFLOW - Follow this exact sequence:
 
-        2. DISCOVER AVAILABLE ATTRIBUTES - ALWAYS DO THIS FIRST
-        - BEFORE making any data requests, you MUST use discover_pdok_services tool
-        - Find out what services are available and what their exact attribute names are
-        - Pay attention to the exact spelling and format of attribute names
-        - Note which service URLs and layer names to use
+            1. ANALYZE USER QUERY  
+            - Determine the query type using patterns above
+            - Identify what primary dataset is needed
+            - Check if location is mentioned
+            - Determine if additional datasets are needed for filtering/exclusion
+            - Keep it simple - not every query needs multiple datasets
 
-        3. FIND COORDINATES (if location mentioned)
-        - Use search_location_coordinates to find coordinates for mentioned addresses/locations
-        - Convert to proper format for the service
+            2. DISCOVER AVAILABLE ATTRIBUTES - ALWAYS DO THIS FIRST
+            - Use discover_pdok_services tool to understand available services
+            - Focus on the primary dataset identified in step 1
+            - Note exact attribute names and layer names
 
-        4. REQUEST DATA WITH CORRECT ATTRIBUTES
-        - Use the EXACT attribute names discovered in step 2
-        - Do not guess or assume attribute names
-        - Use the correct service URL and layer name from step 2
-        - If analysis requires MULTIPLE datasets (e.g., parcels + protected areas + buildings):
-            * Make SEPARATE requests for each dataset type
-            * Request primary dataset first (e.g., parcels)
-            * Request exclusion or inclusion datasets separately (e.g., protected areas, existing buildings)
-            * Do NOT try to filter everything in one request
+            3. FIND COORDINATES (if location mentioned)
+            - Use search_location_coordinates for addresses/place names
+            - Use map center if "around here" or similar
 
-        5. ERROR HANDLING - If any step fails:
-        - If data request fails due to wrong attributes, go back to step 2
-        - Re-discover the service attributes
-        - Correct the attribute names and try again
-        - Do not give up after first failure
+            4. REQUEST DATA WITH CORRECT ATTRIBUTES  
+            - Start with primary dataset using exact names from discovery
+            - Only request additional datasets if truly needed for filtering
+            - Don't overcomplicate simple queries
 
-        CRITICAL RULES:
-        ❌ NEVER guess attribute names like "oppervlakte_min", "area", "bouwjaar" etc.
-        ❌ NEVER skip the discover_pdok_services step
-        ❌ NEVER assume you know the correct attribute names
-        ❌ NEVER use tools before writing your EXECUTION PLAN as comments
-        ❌ NEVER try to filter exclusion criteria within the same dataset (e.g., don't filter "exclude buildings" in parcel request)
-        ✅ ALWAYS start by writing your EXECUTION PLAN as Python comments (# ...)
-        ✅ ALWAYS discover attributes first before making any data request
-        ✅ ALWAYS use the EXACT attribute names found by discover_pdok_services
-        ✅ ALWAYS retry with corrected attributes if first attempt fails
-        ✅ ALWAYS request SEPARATE datasets when exclusion criteria are mentioned (e.g., "exclude protected areas" = get parcels + get protected areas)
-        ✅ ALWAYS use spatial analysis tools to combine multiple datasets for filtering
+            5. ANALYZE AND RESPOND
+            - For area calculations: sum up areas from returned features
+            - For exclusions: request datasets separately, then filter spatially
+            - For simple lookups: return the data directly
 
-        MULTI-DATASET SCENARIOS:
-        When the user mentions exclusions like "exclude protected areas", "avoid buildings", "not in forests":
-        1. Identify the PRIMARY dataset (what they want)
-        2. Identify EXCLUSION datasets (what to avoid)  
-        3. Request each dataset SEPARATELY using appropriate services
-        4. Use perform_spatial_analysis to combine and filter datasets
-        5. Return the filtered results
+            CRITICAL RULES:
+            ❌ NEVER guess attribute names like "oppervlakte_min", "area", "bouwjaar" etc.
+            ❌ NEVER skip the discover_pdok_services step
+            ❌ NEVER assume you know the correct attribute names
+            ❌ NEVER use tools before writing your EXECUTION PLAN as comments
+            ❌ NEVER overcomplicate simple queries with unnecessary datasets
+            ✅ ALWAYS start by writing your EXECUTION PLAN as Python comments (# ...)
+            ✅ ALWAYS discover attributes first before making any data request
+            ✅ ALWAYS use the EXACT attribute names found by discover_pdok_services
+            ✅ ALWAYS retry with corrected attributes if first attempt fails
+            ✅ ALWAYS identify query type first to choose correct primary dataset
+            ✅ ALWAYS keep it simple - only use multiple datasets when truly needed
 
-        COMMON EXCLUSION SCENARIOS:
-        - "Exclude protected areas" → Request parcels + Request Natura2000 protected areas
-        - "Avoid existing buildings" → Request parcels + Request BAG buildings  
-        - "Not in forests" → Request parcels + Request forest/nature areas
-        - "Away from water" → Request parcels + Request water bodies
+            DATASET SELECTION GUIDE:
+            - Land use analysis → Use landuse service (bestandbodemgebruik:bestand_bodemgebruik_2015)
+            - Parcel/property analysis → Use cadastral service
+            - Building information → Use bag service  
+            - Administrative boundaries → Use cbs service
+            - Protected areas → Use natura2000 service
 
-        TECHNICAL REQUIREMENTS:
-        - PDOK services use Dutch projected coordinates EPSG:28992
-        - Import 'json' when working with geographic data
-        - Format geographic responses as GeoJSON
+            MULTI-DATASET SCENARIOS (only when explicitly needed):
+            When the user mentions exclusions like "exclude protected areas", "avoid buildings", "not in forests":
+            1. Identify the PRIMARY dataset (what they want)
+            2. Identify EXCLUSION datasets (what to avoid)  
+            3. Request each dataset SEPARATELY using appropriate services
+            4. Use spatial analysis to combine and filter datasets
+            5. Return the filtered results
 
-        RESPONSE FORMAT:
-        Always return this JSON structure using proper format:
-        - text_description and geojson_data fields in a dictionary
+            COMMON SCENARIOS:
+            - "How much agricultural land..." → Land use query, use landuse service only
+            - "Show buildings in..." → Building query, use bag service only
+            - "Find parcels excluding protected areas" → Parcel query + natura2000 exclusion
+            - "Administrative boundaries of..." → Boundary query, use cbs service only
 
-        EXAMPLE EXECUTION:
+            TECHNICAL REQUIREMENTS:
+            - PDOK services use Dutch projected coordinates EPSG:28992
+            - Import 'json' when working with geographic data
+            - Format geographic responses as GeoJSON
 
-        User asks: "Find parcels suitable for solar panels in Groningen, excluding protected areas and existing buildings"
+            RESPONSE FORMAT:
+            Always return this JSON structure using proper format:
+            - text_description and geojson_data fields in a dictionary
 
-        ```python
-        # EXECUTION PLAN:
-        # 1. Analysis: Need parcels (primary) + protected areas (exclusion) + buildings (exclusion)
-        # 2. Discovery: Discover Cadastral service for parcels, Natura2000 for protected areas, BAG for buildings
-        # 3. Coordinates: Geocode "Groningen" to get coordinates
-        # 4. Data Requests: 
-        #    - Request parcels with area filters
-        #    - Request protected areas in same region  
-        #    - Request existing buildings in same region
-        # 5. Spatial Analysis: Exclude parcels that overlap with protected areas or buildings
-        # 6. Expected Result: Filtered list of suitable parcels for solar panels
-        #
-        # Now executing the plan:
+            EXAMPLE EXECUTIONS:
 
-        # Step 1: Discover all needed services
-        services = discover_pdok_services()
+            Land use example - "How much agricultural land is around Utrecht?":
+            ```python
+            # EXECUTION PLAN:
+            # 1. Query Type: Land use area calculation
+            # 2. Primary Data: Land use classification data (bestandbodemgebruik)
+            # 3. Location: Utrecht area with reasonable radius
+            # 4. Additional Data: None
+            # 5. Analysis: Filter for agricultural classifications, calculate total area
+            # 6. Expected Output: Total agricultural area in hectares around Utrecht
+            ```
 
-        # Step 2: Get coordinates  
-        coords = search_location_coordinates("Groningen")
+            Complex parcel example - "Find parcels for solar panels in Groningen, excluding protected areas":
+            ```python
+            # EXECUTION PLAN:
+            # 1. Query Type: Parcel suitability analysis with exclusions
+            # 2. Primary Data: Land parcels (cadastral)
+            # 3. Location: Groningen area
+            # 4. Additional Data: Protected areas (natura2000) for exclusion
+            # 5. Analysis: Get parcels, get protected areas, exclude overlaps
+            # 6. Expected Output: Suitable parcels for development
+            ```
 
-        # Step 3: Request each dataset separately
-        parcels = fetch_pdok_data(cadastral_service, parcels_layer, ...)
-        protected_areas = fetch_pdok_data(natura2000_service, protected_layer, ...)  
-        buildings = fetch_pdok_data(bag_service, buildings_layer, ...)
-
-        # Step 4: Use spatial analysis to combine datasets
-        final_results = perform_spatial_analysis(datasets_dict, analysis_operations_dict)
-        ```
-
-        START NOW: Write your EXECUTION PLAN as Python comments (# ...), then begin with discover_pdok_services tool.
-        """
+            START NOW: Write your EXECUTION PLAN as Python comments (# ...), then begin with discover_pdok_services tool.
+            """
         
         print("🎯 AI has complete freedom to analyze and respond...")
         print("🔧 No predefined workflows - AI chooses everything")

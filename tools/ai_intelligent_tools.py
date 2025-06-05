@@ -21,7 +21,7 @@ This tool helps the AI understand what PDOK services and layers are available.
 The AI should use this to learn about available endpoints before constructing queries.
 
 Returns information about:
-- Available WFS services (BAG, BGT, BRK, CBS, Cadastral Map, Natura 2000)
+- Available WFS services (BAG, BGT, BRK, CBS, Cadastral Map, Natura 2000, Land Use)
 - Layers within each service
 - Capabilities and feature types
 - Service availability status
@@ -32,7 +32,7 @@ The AI can then use this information to select appropriate services and construc
     inputs = {
         "service_name": {
             "type": "string", 
-            "description": "Specific service to check (bag, bgt, brk, cbs, cadastral, natura2000) or 'all' for all services",
+            "description": "Specific service to check (bag, bgt, brk, cbs, cadastral, natura2000, landuse) or 'all' for all services",
             "nullable": True
         }
     }
@@ -84,6 +84,18 @@ The AI can then use this information to select appropriate services and construc
                 "description": "Natura 2000 is the coherent network of protected natural areas in the European Union consisting of Bird Directive and Habitat Directive areas.",
                 "typical_use": "Protected nature areas, Bird Directive areas, Habitat Directive areas, nature monuments",
                 "keywords": ["natura2000", "protected areas", "nature", "habitat", "bird directive", "conservation", "environment"]
+            },
+            "landuse": {
+                "name": "CBS - Land Use Database 2015 (Bestand Bodemgebruik)",
+                "url": "https://service.pdok.nl/cbs/bestandbodemgebruik/2015/wfs/v1_0",
+                "description": "Detailed land use classification for the Netherlands from 2015. Comprehensive dataset showing how land is actually used across the country with high spatial detail.",
+                "typical_use": "Land use analysis, urban planning, environmental studies, agricultural mapping, zoning analysis",
+                "keywords": ["land use", "bodemgebruik", "urban planning", "agriculture", "zoning", "spatial planning", "environmental analysis"],
+                "coordinate_system": "EPSG:28992",
+                "feature_count": "189,601",
+                "geometry_type": "Polygon",
+                "extent": "Entire Netherlands",
+                "data_year": "2015"
             }
         }
     
@@ -116,12 +128,16 @@ The AI can then use this information to select appropriate services and construc
                         "for_boundaries": "Use 'cbs' service for administrative boundaries",
                         "for_cadastral_map": "Use 'cadastral' service for detailed cadastral parcel visualization and reference",
                         "for_nature_protection": "Use 'natura2000' service for protected natural areas and conservation zones",
-                        "for_environmental_analysis": "Combine 'natura2000' with other services for environmental impact assessment"
+                        "for_environmental_analysis": "Combine 'natura2000' with other services for environmental impact assessment",
+                        "for_land_use": "Use 'landuse' service with 'bestandbodemgebruik:bestand_bodemgebruik_2015' for detailed land use classification",
+                        "for_urban_planning": "Combine 'landuse' with 'cadastral' and 'cbs' for comprehensive planning analysis"
                     },
                     "service_selection_tips": {
                         "cadastral_vs_brk": "Use 'cadastral' for visual/mapping purposes, 'brk' for ownership/legal information",
                         "nature_queries": "Use 'natura2000' for protected areas, environmental regulations, and conservation planning",
-                        "reference_mapping": "Use 'cadastral' as a base layer for overlaying other spatial information"
+                        "reference_mapping": "Use 'cadastral' as a base layer for overlaying other spatial information",
+                        "land_use_analysis": "Use 'landuse' for understanding actual land use patterns - excellent for urban planning and environmental studies",
+                        "comprehensive_analysis": "Combine 'landuse' with other services for multi-layered spatial analysis"
                     }
                 }
             
@@ -252,6 +268,11 @@ The AI can then use this information to select appropriate services and construc
                 "best_for": ["Environmental protection analysis", "Conservation planning", "Protected area identification"],
                 "common_layers": ["Protected nature areas", "Habitat directive areas", "Bird directive areas"],
                 "tips": "Essential for environmental impact assessments and conservation projects"
+            },
+            "landuse": {
+                "best_for": ["Land use classification analysis", "Urban planning studies", "Environmental impact assessment", "Agricultural mapping", "Zoning analysis"],
+                "common_layers": ["bestandbodemgebruik:bestand_bodemgebruik_2015"],
+                "tips": "Uses EPSG:28992 coordinate system. Contains 189,601 polygons covering entire Netherlands. Excellent for understanding actual land use patterns vs. zoning designations. Combine with other datasets for comprehensive spatial analysis."
             }
         }
         
@@ -356,13 +377,13 @@ class PDOKDataRequestTool(Tool):
     name = "request_pdok_data"
     description = """Make WFS requests to PDOK services.
 
-The AI should use this tool after:
-1. Analyzing the user query to understand what data is needed
-2. Using discover_pdok_services to understand available endpoints
-3. Using search_location_coordinates to get coordinates if needed
-4. Determining the appropriate service URL, layer, and filters
+        The AI should use this tool after:
+        1. Analyzing the user query to understand what data is needed
+        2. Using discover_pdok_services to understand available endpoints
+        3. Using search_location_coordinates to get coordinates if needed
+        4. Determining the appropriate service URL, layer, and filters
 
-The AI constructs the parameters based on its analysis of the user query."""
+        The AI constructs the parameters based on its analysis of the user query."""
     
     inputs = {
         "service_url": {
@@ -371,7 +392,7 @@ The AI constructs the parameters based on its analysis of the user query."""
         },
         "layer_name": {
             "type": "string", 
-            "description": "Layer name to query (e.g. 'bag:pand', 'brk:perceel')"
+            "description": "Layer name to query (e.g. 'bag:pand', 'brk:perceel', 'bestandbodemgebruik:bestand_bodemgebruik_2015')"
         },
         "bbox": {
             "type": "string",
@@ -430,8 +451,8 @@ The AI constructs the parameters based on its analysis of the user query."""
             print(f"   Service: {service_url}")
             print(f"   Layer: {layer_name}")
             
-            # Determine coordinate system
-            if "bag" in service_url or "brk" in service_url:
+            # Determine coordinate system based on service
+            if any(service in service_url for service in ["bag", "brk", "bestandbodemgebruik"]):
                 srs = "EPSG:28992"  # RD New for Dutch data
             else:
                 srs = "EPSG:4326"   # WGS84
@@ -473,7 +494,7 @@ The AI constructs the parameters based on its analysis of the user query."""
             processed_features = []
             for i, feature in enumerate(features):
                 try:
-                    processed_feature = self._process_feature(feature, srs, center_lat, center_lon)
+                    processed_feature = self._process_feature(feature, srs, center_lat, center_lon, layer_name)
                     if processed_feature:
                         processed_features.append(processed_feature)
                 except Exception as e:
@@ -529,8 +550,8 @@ The AI constructs the parameters based on its analysis of the user query."""
             print(f"❌ Error calculating bbox: {e}")
             return None
     
-    def _process_feature(self, feature: Dict, srs: str, center_lat: Optional[float], center_lon: Optional[float]) -> Dict:
-        """Process individual feature."""
+    def _process_feature(self, feature: Dict, srs: str, center_lat: Optional[float], center_lon: Optional[float], layer_name: str) -> Dict:
+        """Process individual feature with enhanced land use handling."""
         try:
             properties = feature.get('properties', {})
             geometry = feature.get('geometry', {})
@@ -551,23 +572,17 @@ The AI constructs the parameters based on its analysis of the user query."""
             if center_lat and center_lon:
                 distance_km = self._calculate_distance(center_lat, center_lon, lat, lon)
             
-            # Create feature name and description
-            feature_id = properties.get('identificatie', 'Unknown')
-            name = f"Feature {feature_id[-6:]}" if len(feature_id) > 6 else feature_id
+            # Enhanced feature name and description based on layer type
+            feature_id = properties.get('identificatie', properties.get('gml_id', 'Unknown'))
             
-            # Enhanced description based on properties
-            desc_parts = []
-            if distance_km:
-                desc_parts.append(f"Distance: {distance_km:.3f}km")
-            
-            if properties.get('bouwjaar'):
-                desc_parts.append(f"Built: {properties['bouwjaar']}")
-            
-            area = properties.get('oppervlakte_min') or properties.get('oppervlakte_max') or properties.get('oppervlakte')
-            if area:
-                desc_parts.append(f"Area: {area}m²")
-            
-            description = " | ".join(desc_parts) if desc_parts else "PDOK feature"
+            if 'bestand_bodemgebruik' in layer_name:
+                # Enhanced handling for land use data
+                name = self._get_land_use_name(properties)
+                description = self._get_land_use_description(properties, distance_km)
+            else:
+                # Default handling for other layers
+                name = f"Feature {feature_id[-6:]}" if len(str(feature_id)) > 6 else str(feature_id)
+                description = self._get_default_description(properties, distance_km)
             
             return {
                 "type": "Feature",
@@ -587,6 +602,68 @@ The AI constructs the parameters based on its analysis of the user query."""
         except Exception as e:
             print(f"Error processing feature: {e}")
             return None
+    
+    def _get_land_use_name(self, properties: Dict) -> str:
+        """Generate descriptive name for land use features."""
+        # Look for common land use classification fields
+        land_use_fields = ['bgbcode', 'bgbklasse', 'hoofdklasse', 'subklasse', 'bodemgebruik']
+        
+        for field in land_use_fields:
+            if field in properties and properties[field]:
+                return f"Land Use: {properties[field]}"
+        
+        # Fallback to generic name
+        feature_id = properties.get('gml_id', properties.get('id', 'Unknown'))
+        return f"Land Use Area {str(feature_id)[-6:]}"
+    
+    def _get_land_use_description(self, properties: Dict, distance_km: Optional[float]) -> str:
+        """Generate detailed description for land use features."""
+        desc_parts = []
+        
+        if distance_km:
+            desc_parts.append(f"Distance: {distance_km:.3f}km")
+        
+        # Add land use classification info
+        if properties.get('bgbklasse'):
+            desc_parts.append(f"Class: {properties['bgbklasse']}")
+        
+        if properties.get('hoofdklasse'):
+            desc_parts.append(f"Main category: {properties['hoofdklasse']}")
+        
+        if properties.get('subklasse'):
+            desc_parts.append(f"Subcategory: {properties['subklasse']}")
+        
+        # Add area if available
+        area_fields = ['oppervlakte', 'area', 'shape_area']
+        for field in area_fields:
+            if properties.get(field):
+                try:
+                    area = float(properties[field])
+                    if area > 10000:  # Large areas in hectares
+                        desc_parts.append(f"Area: {area/10000:.2f}ha")
+                    else:  # Small areas in m²
+                        desc_parts.append(f"Area: {area:.0f}m²")
+                    break
+                except (ValueError, TypeError):
+                    continue
+        
+        return " | ".join(desc_parts) if desc_parts else "Land use area"
+    
+    def _get_default_description(self, properties: Dict, distance_km: Optional[float]) -> str:
+        """Generate default description for non-land use features."""
+        desc_parts = []
+        
+        if distance_km:
+            desc_parts.append(f"Distance: {distance_km:.3f}km")
+        
+        if properties.get('bouwjaar'):
+            desc_parts.append(f"Built: {properties['bouwjaar']}")
+        
+        area = properties.get('oppervlakte_min') or properties.get('oppervlakte_max') or properties.get('oppervlakte')
+        if area:
+            desc_parts.append(f"Area: {area}m²")
+        
+        return " | ".join(desc_parts) if desc_parts else "PDOK feature"
     
     def _convert_geometry_to_wgs84(self, geometry: Dict) -> Dict:
         """Convert geometry from RD New to WGS84."""
@@ -692,5 +769,141 @@ class AnswerMapQuestion(Tool):
         elif any(term in question_lower for term in ['what is bag', 'buildings and addresses']):
             return """BAG (Basisregistratie Adressen en Gebouwen) is the Dutch Buildings and Addresses Database. It contains authoritative information about all buildings, addresses, and premises in the Netherlands."""
         
+        elif any(term in question_lower for term in ['land use', 'bodemgebruik', 'bestand bodemgebruik']):
+            return """Bestand Bodemgebruik (Land Use Database) is a comprehensive CBS dataset showing detailed land use classification for the Netherlands. The 2015 version contains 189,601 polygons covering the entire country, providing high-resolution information about how land is actually used - from residential and commercial areas to agriculture, nature, and infrastructure."""
+        
+        elif any(term in question_lower for term in ['what is natura2000', 'protected areas']):
+            return """Natura 2000 is the European Union's network of protected natural areas, consisting of Special Protection Areas (Bird Directive) and Special Areas of Conservation (Habitat Directive). It aims to ensure the long-term survival of Europe's most valuable and threatened species and habitats."""
+        
         else:
             return f"I can help with various map and GIS topics. Could you be more specific about what aspect of mapping or geography you'd like to know about?"
+
+
+# Optional: Remove this entire class if you don't need analysis guidance
+# The LandUseAnalysisTool serves as a guidance/planning tool for the AI
+class LandUseAnalysisTool(Tool):
+    """
+    Analysis guidance tool for land use queries.
+    
+    NOTE: This tool provides recommendations and guidance for land use analysis
+    but does not perform actual data analysis. It helps the AI understand what
+    types of analysis are possible and how to approach them using other tools.
+    """
+    
+    name = "get_land_use_analysis_guidance"
+    description = """Get guidance for land use analysis approaches.
+
+This tool helps the AI understand what types of land use analysis are possible
+and provides recommendations for implementing them using the CBS Bestand Bodemgebruik dataset.
+
+This is a planning/guidance tool - actual data retrieval should use PDOKDataRequestTool."""
+    
+    inputs = {
+        "analysis_type": {
+            "type": "string",
+            "description": "Type of analysis: 'classification', 'statistics', 'distribution', 'environmental'"
+        }
+    }
+    output_type = "object"
+    is_initialized = True
+    
+    def forward(self, analysis_type: str) -> Dict:
+        """Provide guidance for land use analysis approaches."""
+        print(f"📋 Providing land use analysis guidance for: {analysis_type}")
+        
+        base_info = {
+            "dataset": "CBS Bestand Bodemgebruik 2015",
+            "layer_name": "bestandbodemgebruik:bestand_bodemgebruik_2015",
+            "service_url": "https://service.pdok.nl/cbs/bestandbodemgebruik/2015/wfs/v1_0",
+            "coordinate_system": "EPSG:28992 (RD New)",
+            "feature_count": "189,601 polygons",
+            "coverage": "Entire Netherlands"
+        }
+        
+        if analysis_type == "classification":
+            return {
+                **base_info,
+                "analysis_type": "Land Use Classification",
+                "approach": "Query land use polygons and analyze by classification codes",
+                "key_fields": ["bgbcode", "bgbklasse", "hoofdklasse", "subklasse"],
+                "land_use_categories": [
+                    "Residential areas", "Commercial/Industrial", "Agriculture", 
+                    "Nature/Recreation", "Infrastructure", "Water bodies"
+                ],
+                "next_steps": [
+                    "1. Use LocationSearchTool to find coordinates for area of interest",
+                    "2. Use PDOKDataRequestTool with bbox or center/radius to get land use data", 
+                    "3. Group results by classification fields to analyze distribution"
+                ]
+            }
+        
+        elif analysis_type == "statistics":
+            return {
+                **base_info,
+                "analysis_type": "Land Use Statistics",
+                "approach": "Calculate area-based statistics from land use polygons",
+                "metrics_available": [
+                    "Total area by land use type", "Percentage distribution",
+                    "Density calculations", "Land use diversity index"
+                ],
+                "next_steps": [
+                    "1. Query land use data for target area",
+                    "2. Calculate area from geometry or use oppervlakte field",
+                    "3. Group by classification and sum areas for statistics"
+                ]
+            }
+        
+        elif analysis_type == "distribution":
+            return {
+                **base_info,
+                "analysis_type": "Spatial Distribution Analysis", 
+                "approach": "Analyze spatial patterns of land use",
+                "analysis_options": [
+                    "Urban-rural gradient", "Land use fragmentation",
+                    "Clustering patterns", "Connectivity analysis"
+                ],
+                "next_steps": [
+                    "1. Query land use data for large area",
+                    "2. Analyze geometric distribution and proximity",
+                    "3. Calculate spatial metrics and patterns"
+                ]
+            }
+        
+        elif analysis_type == "environmental":
+            return {
+                **base_info,
+                "analysis_type": "Environmental Impact Analysis",
+                "approach": "Combine land use with environmental datasets",
+                "indicators": [
+                    "Green space percentage", "Agricultural pressure",
+                    "Urban sprawl indicators", "Natural area connectivity"
+                ],
+                "recommended_combinations": [
+                    "Land use + Natura2000 for conservation analysis",
+                    "Land use + Administrative boundaries for policy analysis",
+                    "Land use + Water features for environmental corridors"
+                ],
+                "next_steps": [
+                    "1. Query land use data for target area",
+                    "2. Query complementary datasets (Natura2000, etc.)",
+                    "3. Perform overlay analysis to identify relationships"
+                ]
+            }
+        
+        else:
+            return {
+                **base_info,
+                "error": f"Unknown analysis type: {analysis_type}",
+                "available_types": ["classification", "statistics", "distribution", "environmental"]
+            }
+
+
+# Export all tools for the AI agent
+__all__ = [
+    'PDOKServiceDiscoveryTool',
+    'LocationSearchTool', 
+    'PDOKDataRequestTool',
+    'AnalyzeCurrentMapFeatures',
+    'AnswerMapQuestion',
+    'LandUseAnalysisTool'  # Optional - remove if not needed
+]
