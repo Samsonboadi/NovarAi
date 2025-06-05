@@ -1,115 +1,121 @@
-# tools/__init__.py 
+# tools/__init__.py - CLEANED UP - Essential Tools Only
 
-#from .kadaster_tool import KadasterBRKTool, ContactHistoryTool
-from tools.enhanced_pdok_location_tool import IntelligentLocationSearchTool, SpecializedAddressSearchTool
-#from .pdok_intelligent_agent_tool import EnhancedPDOKIntelligentAgent, SmartServiceDiscoveryTool
-#from .pdok_modular_tools import PDOKLocationSearchTool 
-from tools.coordinate_conversion_tool import CoordinateConversionTool , CreateRDBoundingBoxTool
-# Import the NEW flexible PDOK tools
-# from .pdok_service_discovery_tool import (
-#     PDOKServiceDiscoveryTool,
-#     PDOKDataRequestTool,
-#     PDOKDataFilterTool,
-#     PDOKMapDisplayTool,
-#     PDOKBuildingsFlexibleTool
-# )
+"""
+PDOK Tools Registry - Streamlined for Intent-Driven Analysis
 
+This module contains only the essential tools needed for the AI agent to perform
+intelligent, intent-driven geospatial analysis with PDOK services.
 
-from tools.ai_intelligent_tools import (
-    PDOKServiceDiscoveryTool,
-    LocationSearchTool,
-    PDOKDataRequestTool
+CORE PHILOSOPHY:
+- Intent-driven discovery (not all-service discovery)
+- Attribute-based filtering (not hardcoded attributes)  
+- Service-specific targeting (not generic approaches)
+- Minimal tool set (not tool proliferation)
+"""
+
+# Essential Discovery Tool
+from tools.enhanced_discovery_tool import IntentDrivenPDOKDiscoveryTool
+
+# Essential Location Services
+from tools.enhanced_pdok_location_tool import (
+    IntelligentLocationSearchTool, 
+    SpecializedAddressSearchTool
 )
 
-
+# Essential Data Fetching
 from tools.flexible_ai_driven_spatial_tools import (
     FlexibleSpatialDataTool,
     FlexibleSpatialAnalysisTool    
 )
-# Legacy building tool (deprecated but included for compatibility)
-#try:
-    #from .pdok_building_tool import PDOKBuildingsRealTool
-#except ImportError:
-    #print("⚠️ Legacy PDOKBuildingsRealTool not found - using flexible tools only")
-    #PDOKBuildingsRealTool = None
 
+# Essential Coordinate Conversion
+from tools.coordinate_conversion_tool import (
+    CoordinateConversionTool, 
+    CreateRDBoundingBoxTool
+)
+
+# Export only essential tools
 __all__ = [
-    # Location tools
+    # Intent-driven discovery
+    "IntentDrivenPDOKDiscoveryTool",
+    
+    # Location services
     "IntelligentLocationSearchTool",
-    "SpecializedAddressSearchTool",
-    "PDOKLocationSearchTool",
+    "SpecializedAddressSearchTool", 
+    
+    # Flexible data fetching
     "FlexibleSpatialDataTool",
     "FlexibleSpatialAnalysisTool",
-
     
-
+    # Coordinate conversion
     "CoordinateConversionTool",
-    "CreateRDBoundingBoxTool",
-    
-    
-    # NEW Flexible PDOK tools
-    #"PDOKServiceDiscoveryTool",
-    #"PDOKDataRequestTool",
-    #"PDOKDataFilterTool", 
-    #"PDOKMapDisplayTool",
-    #"PDOKBuildingsFlexibleTool",
-    #"EnhancedPDOKIntelligentAgent",
-    #"SmartServiceDiscoveryTool",
-    "IntelligentServiceDiscoveryTool",
-    "AILocationCoordinatorTool",
-    "AIDrivenPDOKAgent",
+    "CreateRDBoundingBoxTool"
 ]
 
-# Print info about available tools
 def print_available_tools():
-    """Print information about available PDOK tools."""
-    print("🔧 AVAILABLE PDOK TOOLS:")
-    print("="*40)
+    """Print information about available ESSENTIAL tools."""
+    print("🔧 ESSENTIAL PDOK TOOLS (Cleaned Up):")
+    print("="*50)
     
-    print("📍 LOCATION TOOLS:")
-    print("  • find_location_coordinates - Enhanced PDOK Locatieserver search")
-    print("  • search_dutch_address_pdok - Specialized address search")
+    print("🎯 INTENT-DRIVEN DISCOVERY:")
+    print("  • IntentDrivenPDOKDiscoveryTool - Targeted service discovery based on user intent")
+    print("    - Supports: bestandbodemgebruik, bag, cadastral, natura2000, cbs, bgt, wetlands")
+    print("    - Returns: Specific attributes for targeted analysis")
     
-    print("\n🏛️ KADASTER TOOLS:")
-    print("  • KadasterBRKTool - Land parcels and ownership data")
-    print("  • ContactHistoryTool - Track property owner communications")
+    print("\n📍 LOCATION SERVICES:")
+    print("  • IntelligentLocationSearchTool - Enhanced location search with type detection")
+    print("  • SpecializedAddressSearchTool - Precise address lookup")
     
-    print("\n🏗️ FLEXIBLE PDOK TOOLS (NEW):")
-    print("  • PDOKServiceDiscoveryTool - Discover available PDOK services")
-    print("  • PDOKDataRequestTool - Make flexible WFS requests")
-    print("  • PDOKDataFilterTool - Apply distance/age/area filters")
-    print("  • PDOKMapDisplayTool - Format data for map display")
-    print("  • PDOKBuildingsFlexibleTool - Combined building search")
+    print("\n🌐 FLEXIBLE DATA FETCHING:")
+    print("  • FlexibleSpatialDataTool - AI-driven data retrieval from any PDOK service")
+    print("  • FlexibleSpatialAnalysisTool - Custom spatial analysis operations")
     
+    print("\n🔄 COORDINATE CONVERSION:")
+    print("  • CoordinateConversionTool - WGS84 to RD New conversion")
+    print("  • CreateRDBoundingBoxTool - Create bounding boxes in RD New")
+    
+    print("\n✨ KEY IMPROVEMENTS:")
+    print("  ✅ Intent-driven approach - AI analyzes user intent first")
+    print("  ✅ Targeted discovery - Only discover the service you need")
+    print("  ✅ Attribute-driven - Use discovered attributes, not hardcoded names")
+    print("  ✅ Service-specific - Match correct service to analysis type")
+    print("  ✅ Streamlined - Removed redundant and deprecated tools")
+    
+    print("\n🗑️ REMOVED TOOLS (Deprecated):")
+    removed_tools = [
+        "ai_intelligent_tools.py",
+        "enhanced_ai_intelligent_tools.py", 
+        "enhanced_multi_layer_spatial_tool.py",
+        "kadaster_tool.py",
+        "pdok_building_tool.py",
+        "pdok_intelligent_agent_tool.py",
+        "pdok_modular_tools.py",
+        "pdok_service_discovery_tool.py"
+    ]
+    
+    for tool in removed_tools:
+        print(f"  ❌ {tool} - Replaced by intent-driven approach")
 
-    
-    print("\n✨ ADVANTAGES OF FLEXIBLE TOOLS:")
-    print("  ✅ Modular design - use individual tools or combined")
-    print("  ✅ Works with any PDOK WFS service, not just buildings")
-    print("  ✅ Better distance calculations and coordinate handling")
-    print("  ✅ Advanced filtering by age, area, distance")
-    print("  ✅ Agent can discover PDOK services automatically")
-    print("  ✅ Proper error handling and debugging")
-    print("  ✅ Solves the '0 buildings found' issue")
-
-# Validation function to check if tools work
-def validate_tools():
-    """Validate that the flexible tools are working correctly."""
-    print("\n🧪 VALIDATING FLEXIBLE PDOK TOOLS...")
+def validate_essential_tools():
+    """Validate that essential tools are working correctly."""
+    print("\n🧪 VALIDATING ESSENTIAL TOOLS...")
     
     try:
-        # Test service discovery
-        discovery_tool = PDOKServiceDiscoveryTool()
-        services_result = discovery_tool.forward("bag")
+        # Test intent-driven discovery
+        discovery_tool = IntentDrivenPDOKDiscoveryTool()
         
-        if services_result.get('error'):
-            print("❌ Service Discovery failed")
+        # Test targeted discovery (not all services)
+        result = discovery_tool.forward("bestandbodemgebruik", get_attributes=True)
+        
+        if result.get('error'):
+            print("❌ Intent-driven discovery failed")
             return False
         else:
-            print("✅ Service Discovery working")
+            print("✅ Intent-driven discovery working")
         
         # Test location search
-        location_result = find_location_coordinates("Amsterdam")
+        location_tool = IntelligentLocationSearchTool()
+        location_result = location_tool.forward("Utrecht")
         
         if location_result.get('error'):
             print("❌ Location search failed")
@@ -117,35 +123,79 @@ def validate_tools():
         else:
             print("✅ Location search working")
         
-        # Test flexible building tool
-        flexible_tool = PDOKBuildingsFlexibleTool()
-        # Quick test with small radius and limited features
-        building_result = flexible_tool.forward(
-            location="Amsterdam",
-            max_features=5,
-            radius_km=1.0
-        )
+        # Test flexible data tool
+        spatial_tool = FlexibleSpatialDataTool()
+        print("✅ Flexible spatial tools available")
         
-        if building_result.get('error'):
-            print(f"⚠️ Building search test failed: {building_result['error']}")
-            print("   This might be due to network issues or coordinate problems")
-            return True  # Don't fail validation for this
-        else:
-            buildings_found = len(building_result.get('geojson_data', []))
-            print(f"✅ Building search working - found {buildings_found} buildings")
-        
-        print("🎉 All flexible tools validated successfully!")
+        print("🎉 All essential tools validated successfully!")
         return True
         
     except ImportError as e:
         print(f"❌ Import error: {e}")
-        print("   Make sure all tool files are in the tools/ directory")
         return False
     except Exception as e:
         print(f"❌ Validation error: {e}")
         return False
 
-# Auto-run validation when module is imported (optional)
+# Intent-to-Service mapping for AI guidance
+INTENT_SERVICE_MAPPING = {
+    "land_use_analysis": {
+        "service": "bestandbodemgebruik",
+        "url": "https://service.pdok.nl/cbs/bestandbodemgebruik/2015/wfs/v1_0",
+        "layer": "bestandbodemgebruik:bestand_bodemgebruik_2015",
+        "keywords": ["agricultural", "land use", "planning", "distribution"]
+    },
+    "building_analysis": {
+        "service": "bag", 
+        "url": "https://service.pdok.nl/lv/bag/wfs/v2_0",
+        "layer": "bag:pand",
+        "keywords": ["building", "construction", "address", "bouwjaar"]
+    },
+    "parcel_analysis": {
+        "service": "cadastral",
+        "url": "https://service.pdok.nl/kadaster/kadastralekaart/wfs/v5_0", 
+        "layer": "kadastralekaart:Perceel",
+        "keywords": ["parcel", "property", "boundary", "kadaster"]
+    },
+    "environmental_analysis": {
+        "service": "natura2000",
+        "url": "https://service.pdok.nl/rvo/natura2000/wfs/v1_0",
+        "layer": "natura2000:natura2000", 
+        "keywords": ["protected", "nature", "conservation", "environment"]
+    },
+    "administrative_analysis": {
+        "service": "cbs",
+        "url": "https://service.pdok.nl/cbs/wijkenbuurten/wfs/v1_0",
+        "layer": "varies",
+        "keywords": ["municipality", "province", "boundary", "administrative"]
+    }
+}
+
+def get_service_for_intent(user_query: str) -> dict:
+    """
+    Helper function to map user query to appropriate service.
+    This can be used by the AI for intent analysis.
+    """
+    query_lower = user_query.lower()
+    
+    for intent, service_info in INTENT_SERVICE_MAPPING.items():
+        if any(keyword in query_lower for keyword in service_info["keywords"]):
+            return {
+                "intent": intent,
+                "recommended_service": service_info["service"],
+                "service_url": service_info["url"],
+                "primary_layer": service_info["layer"],
+                "confidence": "high" if len([k for k in service_info["keywords"] if k in query_lower]) > 1 else "medium"
+            }
+    
+    return {
+        "intent": "unknown",
+        "recommended_service": "cadastral",  # Safe default
+        "confidence": "low",
+        "note": "Could not determine intent - using default cadastral service"
+    }
+
+# Auto-run information when module is imported
 if __name__ == "__main__":
     print_available_tools()
-    validate_tools()
+    validate_essential_tools()

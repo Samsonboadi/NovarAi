@@ -1,4 +1,4 @@
-# app.py - AI Intent Detection (AI analyzes and decides, not tools)
+# app.py - Complete Intent-Driven Map-Aware Flask Application
 
 import os
 import json
@@ -11,10 +11,7 @@ from smolagents import CodeAgent, OpenAIServerModel, tool, Tool, DuckDuckGoSearc
 import statistics
 from collections import Counter
 from datetime import datetime
-from tools.flexible_ai_driven_spatial_tools import (
-    FlexibleSpatialDataTool,
-    FlexibleSpatialAnalysisTool    
-)
+
 app = Flask(__name__, static_folder='static', template_folder='templates')
 load_dotenv()
 
@@ -37,7 +34,9 @@ current_map_state = {
     "zoom": 8,
     "view_bounds": None,
     "last_updated": None,
-    "statistics": {}
+    "statistics": {},
+    "search_location": None,  # Store the search location for pin display
+    "current_layer_type": None  # Track what type of data is currently displayed
 }
 
 def load_system_prompt(file_path: str = "static/system_prompt.yml") -> dict:
@@ -45,7 +44,7 @@ def load_system_prompt(file_path: str = "static/system_prompt.yml") -> dict:
     try:
         with open(file_path, 'r', encoding='utf-8') as file:
             config = yaml.safe_load(file)
-        print(f"✅ Successfully loaded system prompt from {file_path}")
+        print(f"✅ Successfully loaded intent-driven system prompt from {file_path}")
         return config
     except FileNotFoundError:
         print(f"❌ System prompt file not found: {file_path}")
@@ -59,6 +58,283 @@ def load_system_prompt(file_path: str = "static/system_prompt.yml") -> dict:
         print(f"❌ Error loading system prompt from {file_path}: {e}")
         print("Using default system prompt configuration")
         return {}
+
+def ensure_json_serializable(obj):
+    """Convert any non-JSON serializable objects to JSON serializable format."""
+    if isinstance(obj, dict):
+        return {key: ensure_json_serializable(value) for key, value in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [ensure_json_serializable(item) for item in obj]
+    elif hasattr(obj, '__iter__') and not isinstance(obj, (str, bytes)):
+        return [ensure_json_serializable(item) for item in obj]
+    elif hasattr(obj, 'item'):
+        return obj.item()
+    elif hasattr(obj, 'to_dict'):
+        return ensure_json_serializable(obj.to_dict())
+    elif obj is None or isinstance(obj, (str, int, float, bool)):
+        return obj
+    else:
+        return str(obj)
+
+def detect_layer_type_from_features(features):
+    """Detect what type of layer is being displayed based on feature properties."""
+    if not features or len(features) == 0:
+        return "unknown"
+    
+    # Sample the first few features to determine type
+    sample_features = features[:3]
+    
+    for feature in sample_features:
+        properties = feature.get('properties', {})
+        
+        # Check for land use indicators
+        if any(key in properties for key in ['bgb2015_hoofdklasse_code', 'bgb2015_hoofdklasse_label', 'hoofdklasse', 'bodemgebruik']):
+            return "land_use"
+        
+        # Check for building indicators
+        elif any(key in properties for key in ['bouwjaar', 'oppervlakte', 'bag_status', 'pand_status']):
+            return "buildings"
+        
+        # Check for parcel indicators
+        elif any(key in properties for key in ['kadastraleGrootteWaarde', 'perceelnummer', 'sectie', 'kadaster']):
+            return "parcels"
+        
+        # Check for nature/environmental indicators
+        elif any(key in properties for key in ['gebiedsnaam', 'natura2000', 'bescherming', 'type_gebied']):
+            return "environmental"
+        
+        # Check for administrative boundary indicators
+        elif any(key in properties for key in ['gemeentenaam', 'provincienaam', 'gemeentecode', 'wijknaam']):
+            return "administrative"
+    
+    return "unknown"
+
+def create_flexible_legend_data(features, layer_type):
+    """Create legend data based on the type of features being displayed."""
+    if not features or len(features) == 0:
+        return None
+    
+    legend_data = {
+        "layer_type": layer_type,
+        "title": "Feature Legend",
+        "categories": [],
+        "statistics": {}
+    }
+    
+    if layer_type == "land_use":
+        # Create land use legend
+        legend_data["title"] = "🌾 Land Use Classification"
+        
+        # Extract land use classifications
+        classifications = {}
+        total_area = 0
+        
+        for feature in features:
+            props = feature.get('properties', {})
+            
+            # Look for land use classification fields
+            land_use = (props.get('bgb2015_hoofdklasse_label') or 
+                       props.get('hoofdklasse') or 
+                       props.get('bodemgebruik') or 
+                       'Unknown')
+            
+            # Look for area fields
+            area = (props.get('shape_area') or 
+                   props.get('oppervlakte') or 
+                   props.get('area') or 0)
+            
+            if land_use not in classifications:
+                classifications[land_use] = {'count': 0, 'area': 0}
+            
+            classifications[land_use]['count'] += 1
+            classifications[land_use]['area'] += float(area) if area else 0
+            total_area += float(area) if area else 0
+        
+        # Create legend categories
+        colors = ['#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316']
+        for i, (land_use, data) in enumerate(classifications.items()):
+            percentage = (data['area'] / total_area * 100) if total_area > 0 else 0
+            area_ha = data['area'] / 10000 if data['area'] > 0 else 0
+            
+            legend_data["categories"].append({
+                "label": land_use,
+                "color": colors[i % len(colors)],
+                "count": data['count'],
+                "area_ha": round(area_ha, 1),
+                "percentage": round(percentage, 1)
+            })
+        
+        legend_data["statistics"] = {
+            "total_features": len(features),
+            "total_area_ha": round(total_area / 10000, 1) if total_area > 0 else 0,
+            "classifications": len(classifications)
+        }
+    
+    elif layer_type == "buildings":
+        # Create building legend based on age or area
+        legend_data["title"] = "🏠 Building Classification"
+        
+        years = []
+        areas = []
+        
+        for feature in features:
+            props = feature.get('properties', {})
+            
+            year = props.get('bouwjaar')
+            if year and str(year).isdigit():
+                years.append(int(year))
+            
+            area = (props.get('oppervlakte') or 
+                   props.get('area_m2') or 
+                   props.get('oppervlakte_min') or 0)
+            if area and area > 0:
+                areas.append(float(area))
+        
+        if years:
+            # Age-based legend
+            legend_data["categories"] = [
+                {"label": "Historic (pre-1900)", "color": "#8B0000", "range": "< 1900"},
+                {"label": "Early Modern (1900-1950)", "color": "#FF4500", "range": "1900-1950"},
+                {"label": "Mid-Century (1950-2000)", "color": "#32CD32", "range": "1950-2000"},
+                {"label": "Contemporary (2000+)", "color": "#1E90FF", "range": "2000+"}
+            ]
+            
+            legend_data["statistics"] = {
+                "total_buildings": len(features),
+                "year_range": f"{min(years)} - {max(years)}",
+                "average_year": round(sum(years) / len(years))
+            }
+        
+        elif areas:
+            # Area-based legend
+            legend_data["categories"] = [
+                {"label": "Large (>1000m²)", "color": "#dc2626", "range": "> 1000m²"},
+                {"label": "Medium (500-1000m²)", "color": "#f97316", "range": "500-1000m²"},
+                {"label": "Standard (200-500m²)", "color": "#eab308", "range": "200-500m²"},
+                {"label": "Small (<200m²)", "color": "#22c55e", "range": "< 200m²"}
+            ]
+            
+            legend_data["statistics"] = {
+                "total_buildings": len(features),
+                "area_range": f"{min(areas):.0f} - {max(areas):.0f}m²",
+                "average_area": f"{sum(areas) / len(areas):.0f}m²"
+            }
+    
+    elif layer_type == "parcels":
+        # Create parcel legend based on size
+        legend_data["title"] = "📐 Parcel Size Classification"
+        
+        areas = []
+        for feature in features:
+            props = feature.get('properties', {})
+            area = props.get('kadastraleGrootteWaarde', 0)
+            if area and area > 0:
+                areas.append(float(area))
+        
+        if areas:
+            # Convert to hectares for larger parcels
+            areas_ha = [area / 10000 for area in areas]
+            
+            legend_data["categories"] = [
+                {"label": "Very Large (>10ha)", "color": "#dc2626", "range": "> 10ha"},
+                {"label": "Large (5-10ha)", "color": "#f97316", "range": "5-10ha"},
+                {"label": "Medium (1-5ha)", "color": "#eab308", "range": "1-5ha"},
+                {"label": "Standard (0.1-1ha)", "color": "#22c55e", "range": "0.1-1ha"},
+                {"label": "Small (<0.1ha)", "color": "#3b82f6", "range": "< 0.1ha"}
+            ]
+            
+            legend_data["statistics"] = {
+                "total_parcels": len(features),
+                "area_range": f"{min(areas_ha):.2f} - {max(areas_ha):.2f}ha",
+                "average_area": f"{sum(areas_ha) / len(areas_ha):.2f}ha",
+                "total_area": f"{sum(areas_ha):.1f}ha"
+            }
+    
+    elif layer_type == "environmental":
+        # Create environmental/nature legend
+        legend_data["title"] = "🌿 Protected Areas"
+        
+        area_types = {}
+        total_area = 0
+        
+        for feature in features:
+            props = feature.get('properties', {})
+            
+            area_type = (props.get('type_gebied') or 
+                        props.get('naam') or 
+                        props.get('gebiedsnaam') or 
+                        'Protected Area')
+            
+            area = props.get('oppervlakte', 0)
+            
+            if area_type not in area_types:
+                area_types[area_type] = {'count': 0, 'area': 0}
+            
+            area_types[area_type]['count'] += 1
+            area_types[area_type]['area'] += float(area) if area else 0
+            total_area += float(area) if area else 0
+        
+        colors = ['#22c55e', '#10b981', '#059669', '#047857', '#065f46']
+        for i, (area_type, data) in enumerate(area_types.items()):
+            legend_data["categories"].append({
+                "label": area_type,
+                "color": colors[i % len(colors)],
+                "count": data['count'],
+                "area_ha": round(data['area'] / 10000, 1) if data['area'] > 0 else 0
+            })
+        
+        legend_data["statistics"] = {
+            "total_areas": len(features),
+            "total_area_ha": round(total_area / 10000, 1) if total_area > 0 else 0,
+            "area_types": len(area_types)
+        }
+    
+    elif layer_type == "administrative":
+        # Create administrative boundary legend
+        legend_data["title"] = "🗺️ Administrative Boundaries"
+        
+        boundary_types = {}
+        
+        for feature in features:
+            props = feature.get('properties', {})
+            
+            if 'provincienaam' in props:
+                boundary_type = 'Province'
+            elif 'gemeentenaam' in props:
+                boundary_type = 'Municipality'
+            elif 'wijknaam' in props:
+                boundary_type = 'District'
+            else:
+                boundary_type = 'Administrative Area'
+            
+            if boundary_type not in boundary_types:
+                boundary_types[boundary_type] = 0
+            boundary_types[boundary_type] += 1
+        
+        colors = ['#3b82f6', '#8b5cf6', '#06b6d4', '#f59e0b']
+        for i, (boundary_type, count) in enumerate(boundary_types.items()):
+            legend_data["categories"].append({
+                "label": boundary_type,
+                "color": colors[i % len(colors)],
+                "count": count
+            })
+        
+        legend_data["statistics"] = {
+            "total_boundaries": len(features),
+            "boundary_types": len(boundary_types)
+        }
+    
+    else:
+        # Generic legend for unknown types
+        legend_data["title"] = "📊 Features"
+        legend_data["categories"] = [
+            {"label": "Features", "color": "#3b82f6", "count": len(features)}
+        ]
+        legend_data["statistics"] = {
+            "total_features": len(features)
+        }
+    
+    return legend_data
 
 @tool
 def analyze_current_map_features() -> dict:
@@ -75,22 +351,26 @@ def analyze_current_map_features() -> dict:
             return {
                 "message": "No features are currently displayed on the map.",
                 "feature_count": 0,
-                "suggestions": ["Ask the AI to find buildings or addresses in a specific location"]
+                "suggestions": ["Ask the AI to find land use data, buildings, or parcels in a specific location"]
             }
+        
+        # Detect layer type
+        layer_type = detect_layer_type_from_features(features)
+        current_map_state["current_layer_type"] = layer_type
         
         analysis = {
             "feature_count": len(features),
+            "layer_type": layer_type,
             "feature_types": {},
-            "building_statistics": {},
+            "analysis_summary": {},
             "geographic_info": {},
             "summary": ""
         }
         
         # Analyze feature types and properties
         geometry_types = []
-        building_years = []
-        building_areas = []
         locations = []
+        feature_properties = []
         
         for feature in features:
             if 'geometry' in feature and feature['geometry']:
@@ -98,16 +378,7 @@ def analyze_current_map_features() -> dict:
                 geometry_types.append(geom_type)
             
             props = feature.get('properties', {})
-            
-            # Building year analysis
-            year = props.get('bouwjaar')
-            if year and str(year).isdigit():
-                building_years.append(int(year))
-            
-            # Area analysis  
-            area = props.get('area_m2', 0) or props.get('oppervlakte_min', 0) or props.get('oppervlakte_max', 0)
-            if area > 0:
-                building_areas.append(area)
+            feature_properties.append(props)
             
             # Location tracking
             if 'lat' in feature and 'lon' in feature:
@@ -116,20 +387,15 @@ def analyze_current_map_features() -> dict:
         # Feature type statistics
         analysis["feature_types"] = dict(Counter(geometry_types))
         
-        # Building statistics
-        if building_years:
-            analysis["building_statistics"]["year_range"] = {
-                "oldest": min(building_years),
-                "newest": max(building_years),
-                "average": round(statistics.mean(building_years))
-            }
-        
-        if building_areas:
-            analysis["building_statistics"]["area_stats"] = {
-                "total_area_m2": round(sum(building_areas)),
-                "average_area_m2": round(statistics.mean(building_areas)),
-                "largest_building_m2": max(building_areas)
-            }
+        # Layer-specific analysis
+        if layer_type == "land_use":
+            analysis["analysis_summary"] = analyze_land_use_features(features)
+        elif layer_type == "buildings":
+            analysis["analysis_summary"] = analyze_building_features(features)
+        elif layer_type == "parcels":
+            analysis["analysis_summary"] = analyze_parcel_features(features)
+        elif layer_type == "environmental":
+            analysis["analysis_summary"] = analyze_environmental_features(features)
         
         # Geographic analysis
         if locations:
@@ -142,15 +408,9 @@ def analyze_current_map_features() -> dict:
             }
         
         # Generate summary
-        summary_parts = [f"Currently displaying {len(features)} features on the map"]
-        
-        if building_years:
-            year_stats = analysis["building_statistics"]["year_range"]
-            summary_parts.append(f"Buildings from {year_stats['oldest']} to {year_stats['newest']}")
-        
-        if building_areas:
-            area_stats = analysis["building_statistics"]["area_stats"]
-            summary_parts.append(f"Total area: {area_stats['total_area_m2']:,}m²")
+        summary_parts = [f"Currently displaying {len(features)} {layer_type} features"]
+        if analysis["analysis_summary"]:
+            summary_parts.append(str(analysis["analysis_summary"]))
         
         analysis["summary"] = ". ".join(summary_parts) + "."
         
@@ -162,6 +422,126 @@ def analyze_current_map_features() -> dict:
         
     except Exception as e:
         return {"error": f"Error analyzing map features: {str(e)}"}
+
+def analyze_land_use_features(features):
+    """Analyze land use specific features."""
+    classifications = {}
+    total_area = 0
+    
+    for feature in features:
+        props = feature.get('properties', {})
+        
+        land_use = (props.get('bgb2015_hoofdklasse_label') or 
+                   props.get('hoofdklasse') or 
+                   props.get('bodemgebruik') or 
+                   'Unknown')
+        
+        area = (props.get('shape_area') or 
+               props.get('oppervlakte') or 
+               props.get('area') or 0)
+        
+        if land_use not in classifications:
+            classifications[land_use] = 0
+        
+        classifications[land_use] += float(area) if area else 0
+        total_area += float(area) if area else 0
+    
+    # Find dominant land use
+    if classifications:
+        dominant_use = max(classifications, key=classifications.get)
+        dominant_percentage = (classifications[dominant_use] / total_area * 100) if total_area > 0 else 0
+        
+        return {
+            "dominant_land_use": dominant_use,
+            "dominant_percentage": round(dominant_percentage, 1),
+            "total_area_ha": round(total_area / 10000, 1) if total_area > 0 else 0,
+            "land_use_types": len(classifications)
+        }
+    
+    return {}
+
+def analyze_building_features(features):
+    """Analyze building specific features."""
+    years = []
+    areas = []
+    
+    for feature in features:
+        props = feature.get('properties', {})
+        
+        year = props.get('bouwjaar')
+        if year and str(year).isdigit():
+            years.append(int(year))
+        
+        area = (props.get('oppervlakte') or 
+               props.get('area_m2') or 
+               props.get('oppervlakte_min') or 0)
+        if area and area > 0:
+            areas.append(float(area))
+    
+    result = {}
+    
+    if years:
+        result.update({
+            "oldest_building": min(years),
+            "newest_building": max(years),
+            "average_year": round(sum(years) / len(years))
+        })
+    
+    if areas:
+        result.update({
+            "average_area_m2": round(sum(areas) / len(areas)),
+            "largest_building_m2": max(areas),
+            "total_building_area": round(sum(areas))
+        })
+    
+    return result
+
+def analyze_parcel_features(features):
+    """Analyze parcel specific features."""
+    areas = []
+    
+    for feature in features:
+        props = feature.get('properties', {})
+        area = props.get('kadastraleGrootteWaarde', 0)
+        if area and area > 0:
+            areas.append(float(area))
+    
+    if areas:
+        areas_ha = [area / 10000 for area in areas]
+        return {
+            "total_parcels": len(features),
+            "average_size_ha": round(sum(areas_ha) / len(areas_ha), 2),
+            "largest_parcel_ha": round(max(areas_ha), 2),
+            "total_area_ha": round(sum(areas_ha), 1)
+        }
+    
+    return {"total_parcels": len(features)}
+
+def analyze_environmental_features(features):
+    """Analyze environmental/nature specific features."""
+    area_types = {}
+    
+    for feature in features:
+        props = feature.get('properties', {})
+        
+        area_type = (props.get('type_gebied') or 
+                    props.get('naam') or 
+                    props.get('gebiedsnaam') or 
+                    'Protected Area')
+        
+        if area_type not in area_types:
+            area_types[area_type] = 0
+        area_types[area_type] += 1
+    
+    if area_types:
+        dominant_type = max(area_types, key=area_types.get)
+        return {
+            "dominant_type": dominant_type,
+            "total_protected_areas": len(features),
+            "area_types": len(area_types)
+        }
+    
+    return {"total_protected_areas": len(features)}
 
 @tool  
 def get_map_context_info() -> dict:
@@ -177,6 +557,8 @@ def get_map_context_info() -> dict:
             "current_center": current_map_state.get("center", [5.2913, 52.1326]),
             "current_zoom": current_map_state.get("zoom", 8),
             "feature_count": len(current_map_state.get("features", [])),
+            "current_layer_type": current_map_state.get("current_layer_type", "unknown"),
+            "search_location": current_map_state.get("search_location"),
             "last_updated": current_map_state.get("last_updated"),
             "view_bounds": current_map_state.get("view_bounds")
         }
@@ -210,7 +592,7 @@ def answer_map_question(question: str) -> str:
     
     Args:
         question: The map-related question to answer
-        
+    
     Returns:
         Answer to the map question
     """
@@ -221,148 +603,76 @@ def answer_map_question(question: str) -> str:
         if any(term in question_lower for term in ['what is gis', 'geographic information system']):
             return """GIS (Geographic Information System) is a framework for gathering, managing, and analyzing spatial and geographic data. It combines hardware, software, and data to capture, manage, analyze, and display all forms of geographically referenced information."""
         
-        elif any(term in question_lower for term in ['what is wgs84', 'coordinate system']):
-            return """WGS84 (World Geodetic System 1984) is the standard coordinate system used by GPS and most web mapping applications. It defines locations using latitude and longitude in decimal degrees. In the Netherlands, we also use RD New (EPSG:28992), which is the national coordinate system optimized for accurate measurements within Dutch borders."""
-        
         elif any(term in question_lower for term in ['what is pdok', 'pdok']):
-            return """PDOK (Publieke Dienstverlening Op de Kaart) is the Dutch national spatial data infrastructure. It provides free access to geographic datasets from Dutch government organizations, including building data (BAG), topographic maps, aerial imagery, and administrative boundaries. It's the authoritative source for Dutch geographic information."""
+            return """PDOK (Publieke Dienstverlening Op de Kaart) is the Dutch national spatial data infrastructure. It provides free access to geographic datasets from Dutch government organizations, including land use data (bestandbodemgebruik), building data (BAG), cadastral information, and environmental data."""
+        
+        elif any(term in question_lower for term in ['land use', 'bestandbodemgebruik']):
+            return """Bestand Bodemgebruik is the Dutch land use database from CBS containing detailed classification of how land is actually used across the Netherlands. It includes agricultural areas, urban development, nature areas, water bodies, and infrastructure with high spatial detail."""
         
         elif any(term in question_lower for term in ['what is bag', 'buildings and addresses']):
-            return """BAG (Basisregistratie Adressen en Gebouwen) is the Dutch Buildings and Addresses Database. It contains authoritative information about all buildings, addresses, and premises in the Netherlands. Each building has a unique identifier and includes details like construction year, status, area, and precise polygon geometry."""
+            return """BAG (Basisregistratie Adressen en Gebouwen) is the Dutch Buildings and Addresses Database. It contains authoritative information about all buildings, addresses, and premises in the Netherlands with construction years, areas, and precise geometries."""
         
         else:
-            return f"I can help with various map and GIS topics including coordinate systems, data formats, spatial analysis, and Dutch geographic data sources. Could you be more specific about what aspect of mapping or geography you'd like to know about?"
+            return f"I can help with various map and GIS topics including PDOK services, land use analysis, building data, and spatial analysis techniques. Could you be more specific about what you'd like to know?"
         
     except Exception as e:
         return f"Error answering map question: {str(e)}"
 
-def ensure_json_serializable(obj):
-    """Convert any non-JSON serializable objects to JSON serializable format."""
-    if isinstance(obj, dict):
-        return {key: ensure_json_serializable(value) for key, value in obj.items()}
-    elif isinstance(obj, (list, tuple)):
-        return [ensure_json_serializable(item) for item in obj]
-    elif hasattr(obj, '__iter__') and not isinstance(obj, (str, bytes)):
-        return [ensure_json_serializable(item) for item in obj]
-    elif hasattr(obj, 'item'):
-        return obj.item()
-    elif hasattr(obj, 'to_dict'):
-        return ensure_json_serializable(obj.to_dict())
-    elif obj is None or isinstance(obj, (str, int, float, bool)):
-        return obj
-    else:
-        return str(obj)
-
-def validate_and_fix_geometry(geometry):
-    """Validate and fix geometry data structure."""
-    if not isinstance(geometry, dict):
-        return None
-        
-    geom_type = geometry.get('type')
-    coordinates = geometry.get('coordinates')
+def create_agent_with_intent_driven_tools():
+    """Create the agent with streamlined, intent-driven tools."""
     
-    if not geom_type or not coordinates:
-        return None
-    
+    # Import only essential tools
     try:
-        fixed_coordinates = ensure_json_serializable(coordinates)
+        # Try to import the enhanced discovery tool first
+        try:
+            from tools.enhanced_discovery_tool import IntentDrivenPDOKDiscoveryTool
+            discovery_tool = IntentDrivenPDOKDiscoveryTool()
+            print("✅ Using enhanced intent-driven discovery tool")
+        except ImportError:
+            # Fallback to enhanced AI intelligent tools
+            try:
+                from tools.enhanced_ai_intelligent_tools import EnhancedPDOKServiceDiscoveryTool
+                discovery_tool = EnhancedPDOKServiceDiscoveryTool()
+                print("✅ Using enhanced AI intelligent discovery tool")
+            except ImportError:
+                # Final fallback to basic AI tools
+                from tools.ai_intelligent_tools import PDOKServiceDiscoveryTool
+                discovery_tool = PDOKServiceDiscoveryTool()
+                print("⚠️ Using basic discovery tool")
         
-        if geom_type == 'Point':
-            if not isinstance(fixed_coordinates, list) or len(fixed_coordinates) != 2:
-                return None
-            if not all(isinstance(coord, (int, float)) for coord in fixed_coordinates):
-                return None
-                
-        elif geom_type == 'Polygon':
-            if not isinstance(fixed_coordinates, list) or not fixed_coordinates:
-                return None
-            exterior = fixed_coordinates[0]
-            if not isinstance(exterior, list) or len(exterior) < 4:
-                return None
-            for coord_pair in exterior:
-                if not isinstance(coord_pair, list) or len(coord_pair) != 2:
-                    return None
-                if not all(isinstance(coord, (int, float)) for coord in coord_pair):
-                    return None
-                    
-        elif geom_type == 'LineString':
-            if not isinstance(fixed_coordinates, list) or len(fixed_coordinates) < 2:
-                return None
-            for coord_pair in fixed_coordinates:
-                if not isinstance(coord_pair, list) or len(coord_pair) != 2:
-                    return None
-                if not all(isinstance(coord, (int, float)) for coord in coord_pair):
-                    return None
+        from tools.enhanced_pdok_location_tool import IntelligentLocationSearchTool
+        from tools.flexible_ai_driven_spatial_tools import FlexibleSpatialDataTool, FlexibleSpatialAnalysisTool
+        from tools.coordinate_conversion_tool import CoordinateConversionTool
         
-        return {
-            'type': geom_type,
-            'coordinates': fixed_coordinates
-        }
-        
-    except Exception as e:
-        print(f"Error fixing geometry: {e}")
-        return None
-
-def create_agent_with_ai_intelligence():
-    """Create the map-aware agent where AI does the intent detection."""
-    from tools.coordinate_conversion_tool import CoordinateConversionTool , CreateRDBoundingBoxTool
-    # Try to import the enhanced intelligent tools with attribute discovery
-    try:
-        from tools.enhanced_ai_intelligent_tools import (
-            EnhancedPDOKServiceDiscoveryTool,
-            LocationSearchTool,
-            PDOKDataRequestTool
-        )
-        
-        intelligent_tools = [
-            EnhancedPDOKServiceDiscoveryTool(),  # Enhanced with attribute discovery
-            LocationSearchTool(),                # AI uses this to find coordinates  
-            PDOKDataRequestTool(),               # AI uses this to make requests
+        essential_tools = [
+            discovery_tool,                     # Intent-driven or enhanced discovery
+            IntelligentLocationSearchTool(),    # Location search
+            FlexibleSpatialDataTool(),          # Flexible data fetching
+            FlexibleSpatialAnalysisTool(),      # Spatial analysis
+            CoordinateConversionTool()          # Coordinate conversion
         ]
-        print("✅ Successfully imported ENHANCED intelligent tools with attribute discovery")
+        
+        print("✅ Successfully imported essential tools")
         tools_available = True
         
     except ImportError as e:
-        print(f"⚠️ Could not import enhanced tools: {e}")
-        print("🔄 Trying original tools...")
-        
-        try:
-            from tools.ai_intelligent_tools import (
-                PDOKServiceDiscoveryTool,
-                LocationSearchTool,
-                PDOKDataRequestTool
-            )
-            
-            intelligent_tools = [
-                PDOKServiceDiscoveryTool(),       # Original version
-                LocationSearchTool(),            
-                PDOKDataRequestTool(),           
-            ]
-            print("✅ Using original intelligent tools")
-            tools_available = True
-            
-        except ImportError as e2:
-            print(f"⚠️ Could not import any intelligent tools: {e2}")
-            intelligent_tools = []
-            tools_available = False
+        print(f"❌ Could not import essential tools: {e}")
+        essential_tools = []
+        tools_available = False
     
-    # Combine all tools for the AI to use
+    # Combine with built-in tools
     tools = []
-    tools.extend(intelligent_tools)
+    tools.extend(essential_tools)
     
-    # Add built-in tools
+    # Add built-in analysis tools
     tools.extend([
         analyze_current_map_features,
         get_map_context_info,
         answer_map_question,
-        DuckDuckGoSearchTool(),
-        CoordinateConversionTool(),
-        FlexibleSpatialDataTool(),
-        FlexibleSpatialAnalysisTool()
-
+        DuckDuckGoSearchTool()
     ])
 
-    print(f"🧠 Creating AI-INTELLIGENT agent with {len(tools)} tools:")
+    print(f"🧠 Creating INTENT-DRIVEN agent with {len(tools)} essential tools:")
     for tool in tools:
         if hasattr(tool, 'name'):
             tool_name = tool.name
@@ -372,20 +682,20 @@ def create_agent_with_ai_intelligence():
             tool_name = str(type(tool).__name__)
         print(f"  ✅ {tool_name}")
     
-    # Load system prompt optimized for AI intelligence
+    # Load intent-driven system prompt
     system_prompt_config = load_system_prompt("static/system_prompt.yml")
     
-    # Create agent with AI-intelligent configuration
+    # Create agent with intent-driven configuration
     if system_prompt_config:
-        print("✅ Using AI-INTELLIGENT system prompt configuration")
+        print("✅ Using INTENT-DRIVEN system prompt configuration")
         agent = CodeAgent(
             model=model,
             tools=tools,
-            max_steps=20,  # More steps for AI analysis
+            max_steps=15,  # Fewer steps due to focused approach
             prompt_templates=system_prompt_config,
             additional_authorized_imports=[
-                "xml.etree.ElementTree", "json", "requests", "shapely.geometry", 
-                "shapely.ops", "pyproj", "re", "statistics", "collections", "datetime", "math"
+                "xml.etree.ElementTree", "json", "requests", "re", 
+                "statistics", "collections", "datetime", "math"
             ]
         )
     else:
@@ -393,17 +703,84 @@ def create_agent_with_ai_intelligence():
         agent = CodeAgent(
             model=model,
             tools=tools,
-            max_steps=20,
+            max_steps=15,
             additional_authorized_imports=[
-                "xml.etree.ElementTree", "json", "requests", "shapely.geometry", 
-                "shapely.ops", "pyproj", "re", "statistics", "collections", "datetime", "math"
+                "xml.etree.ElementTree", "json", "requests", "re",
+                "statistics", "collections", "datetime", "math"
             ]
         )
     
     return agent, tools_available
 
-# Initialize the agent with AI intelligence
-agent, tools_available = create_agent_with_ai_intelligence()
+# Initialize the agent with intent-driven tools
+agent, tools_available = create_agent_with_intent_driven_tools()
+
+def extract_search_location_from_response(response_text, features):
+    """Extract search location information from AI response or features."""
+    search_location = None
+    
+    # Try to extract from response text
+    if response_text:
+        import re
+        
+        # Look for coordinate patterns
+        coord_patterns = [
+            r'(\d{2}\.\d+)°?N[,\s]+(\d{1,2}\.\d+)°?E',
+            r'lat[itude]*[:\s]*(\d{2}\.\d+)[,\s]+lon[gitude]*[:\s]*(\d{1,2}\.\d+)',
+            r'coordinates[:\s]*\[?(\d{2}\.\d+)[,\s]+(\d{1,2}\.\d+)\]?'
+        ]
+        
+        for pattern in coord_patterns:
+            match = re.search(pattern, response_text, re.IGNORECASE)
+            if match:
+                lat, lon = float(match.group(1)), float(match.group(2))
+                search_location = {
+                    "lat": lat,
+                    "lon": lon,
+                    "name": "Search Location",
+                    "source": "response_text"
+                }
+                break
+        
+        # Look for location names
+        if not search_location:
+            location_patterns = [
+                r'(?:near|around|in|at)\s+([A-Za-z\s]+?)(?:\s|$|,|\.|province)',
+                r'([A-Za-z]+(?:\s+[A-Za-z]+)*)\s+(?:province|area|region)',
+                r'(?:searching|found|located)\s+(?:in|near)\s+([A-Za-z\s]+?)(?:\s|$|,|\.)'
+            ]
+            
+            for pattern in location_patterns:
+                match = re.search(pattern, response_text, re.IGNORECASE)
+                if match:
+                    location_name = match.group(1).strip()
+                    if len(location_name) > 2:  # Valid location name
+                        search_location = {
+                            "name": location_name,
+                            "source": "response_text_name"
+                        }
+                        break
+    
+    # Try to extract from features with distance information
+    if not search_location and features:
+        for feature in features:
+            props = feature.get('properties', {})
+            if 'distance_km' in props or 'distance_from_reference' in props:
+                # This suggests there was a reference point
+                # Use the centroid of features as approximate search location
+                lats = [f.get('lat', 0) for f in features if f.get('lat')]
+                lons = [f.get('lon', 0) for f in features if f.get('lon')]
+                
+                if lats and lons:
+                    search_location = {
+                        "lat": sum(lats) / len(lats),
+                        "lon": sum(lons) / len(lons),
+                        "name": "Search Area Center",
+                        "source": "feature_centroid"
+                    }
+                break
+    
+    return search_location
 
 # Flask routes
 @app.route('/')
@@ -411,14 +788,13 @@ def index():
     """Serve the main application page."""
     return render_template('base.html')
 
-
 @app.route('/api/query', methods=['POST'])
 def query():
-    """Handle chat queries using TRUE AI FLEXIBILITY with minimal guidance."""
+    """Handle chat queries using INTENT-DRIVEN AI approach with enhanced features."""
     global current_map_state
     
     print("\n" + "="*80)
-    print("🧠 TRUE AI FLEXIBILITY - AI DECIDES EVERYTHING")
+    print("🎯 INTENT-DRIVEN AI ANALYSIS WITH ENHANCED FEATURES")
     print("="*80)
     
     data = request.json
@@ -438,10 +814,10 @@ def query():
     current_map_state["zoom"] = map_zoom
     
     try:
-        print("🧠 Running AI with COMPLETE FLEXIBILITY...")
+        print("🎯 Running INTENT-DRIVEN AI analysis...")
         
-        # MINIMAL context prompt - let AI decide everything
-        minimal_context_prompt = f"""
+        # Enhanced intent-driven context prompt
+        intent_driven_prompt = f"""
             User query: "{query_text}"
 
             Current map context:
@@ -449,151 +825,98 @@ def query():
             - Zoom level: {map_zoom}
             - Features currently on map: {len(current_features)}
 
-            You are an intelligent AI assistant with access to tools for spatial analysis and geospatial data.
+            You are an intelligent AI assistant with INTENT-DRIVEN analysis capabilities.
 
-            🎯 FIRST: EXPLAIN YOUR EXECUTION PLAN
-            Before using any tools, you MUST write out your planned steps as a COMMENT in this format:
+            🎯 MANDATORY WORKFLOW - INTENT FIRST:
 
+            1. **ANALYZE USER INTENT** (in comments, no tools yet):
+               ```python
+               # INTENT ANALYSIS:
+               # Query type: [land_use_analysis/building_analysis/parcel_analysis/environmental_analysis/administrative_analysis]
+               # Primary service needed: [bestandbodemgebruik/bag/cadastral/natura2000/cbs]
+               # Location mentioned: [location name or "none"]
+               # Analysis required: [area calculation/distribution/filtering/visualization]
+               # Expected output: [what user wants to see]
+               ```
+
+            2. **TARGETED SERVICE DISCOVERY** (single service only):
+               - Use discover_pdok_services with SPECIFIC service name based on intent
+               - For land use analysis → service_name="bestandbodemgebruik" 
+               - For building analysis → service_name="bag"  
+               - For parcel analysis → service_name="cadastral"
+               - For environmental analysis → service_name="natura2000"
+               - For administrative analysis → service_name="cbs"
+               - ALWAYS set get_attributes=True to get attribute information
+
+            3. **LOCATION RESOLUTION** (if needed):
+               - Use search_location_coordinates for mentioned locations
+               - Store coordinates for search location pin display
+
+            4. **PRECISE DATA REQUEST** (using discovered attributes):
+               - Use fetch_pdok_data with exact service URL and layer from discovery
+               - Use discovered attribute names for filters (never hardcoded names)
+               - Construct search area based on location and appropriate radius
+
+            5. **ANALYSIS AND RESPONSE**:
+               - Process data according to user intent
+               - Calculate totals, percentages, distributions as requested
+               - Format for flexible legend system
+               - Return structured response with text_description and geojson_data
+
+            🚨 CRITICAL RULES:
+            ❌ NEVER discover all services - only the one you need
+            ❌ NEVER use hardcoded attribute names like 'kadastraleGrootteWaarde', 'oppervlakte_min'
+            ❌ NEVER skip intent analysis
+            ❌ NEVER use wrong service for analysis type
+            ❌ NEVER assume attribute names exist without discovery
+            ✅ ALWAYS analyze intent first (in comments)
+            ✅ ALWAYS discover targeted service only
+            ✅ ALWAYS use exact discovered attribute names
+            ✅ ALWAYS match service to analysis type
+            ✅ ALWAYS include search location information
+            ✅ ALWAYS make sure the retirved coordnates from the location search are in rdnew format that is critical for making querry to the PDOK services
+            ✅ ALWAYS import json if dealing with geographic data
+            🎯 SERVICE MAPPING:
+            - "agricultural land", "land use", "distribution" → bestandbodemgebruik service
+            - "buildings", "construction", "bouwjaar" → bag service
+            - "parcels", "properties", "kadaster" → cadastral service
+            - "protected areas", "nature", "natura2000" → natura2000 service
+            - "municipalities", "boundaries", "administrative" → cbs service
+
+            📍 LOCATION PIN REQUIREMENTS:
+            - If location is mentioned, find coordinates and include in response
+            - Add search_location to response for map pin display
+            - Format: {{"lat": latitude, "lon": longitude, "name": "Location Name"}}
+
+            🏷️ FLEXIBLE LEGEND SUPPORT:
+            - Features will be analyzed for layer type (land_use, buildings, parcels, environmental, administrative)
+            - Frontend will create appropriate legend based on layer type
+            - Ensure features have proper properties for legend generation
+
+            📊 RESPONSE FORMAT:
+            Always return JSON structure:
             ```python
-            # EXECUTION PLAN:
-            # 1. Query Type: [What type of analysis is this - land use, parcel search, building lookup, etc.]
-            # 2. Primary Data: [What's the main dataset needed]
-            # 3. Location: [Where to search - address, coordinates, or area]  
-            # 4. Additional Data: [Any other datasets needed, or "None"]
-            # 5. Analysis: [What to do with the data - calculate area, filter, combine, etc.]
-            # 6. Expected Output: [What to return to user]
-            #
-            # Now executing the plan:
+            import json
+            final_answer(json.dumps({{
+                "text_description": "Detailed analysis description with statistics",
+                "geojson_data": processed_features_array,
+                "search_location": {{"lat": lat, "lon": lon, "name": "Location Name"}},  # If location found
+                "layer_type": "detected_layer_type",  # For legend generation
+                "analysis_summary": {{"key": "statistics"}}  # Optional summary data
+            }}))
             ```
 
-            QUERY TYPE PATTERNS:
-            - Land use queries: "How much [land type]", "What percentage", "Land use distribution"
-            - Building queries: "Show buildings", "Find addresses", "Building information"  
-            - Parcel queries: "Find parcels", "Suitable land", "Available plots"
-            - Boundary queries: "Administrative boundaries", "Municipal limits"
-            - Protection queries: "Protected areas", "Nature reserves"
-
-            MANDATORY WORKFLOW - Follow this exact sequence:
-
-            1. ANALYZE USER QUERY  
-            - Determine the query type using patterns above
-            - Identify what primary dataset is needed
-            - Check if location is mentioned
-            - Determine if additional datasets are needed for filtering/exclusion
-            - Keep it simple - not every query needs multiple datasets
-
-            2. DISCOVER AVAILABLE ATTRIBUTES - ALWAYS DO THIS FIRST
-            - Use discover_pdok_services tool to understand available services
-            - Focus on the primary dataset identified in step 1
-            - Note exact attribute names and layer names
-
-            3. FIND COORDINATES (if location mentioned)
-            - Use search_location_coordinates for addresses/place names
-            - Use map center if "around here" or similar
-
-            4. REQUEST DATA WITH CORRECT ATTRIBUTES  
-            - Start with primary dataset using exact names from discovery
-            - Only request additional datasets if truly needed for filtering
-            - Don't overcomplicate simple queries
-
-            5. ANALYZE AND RESPOND
-            - For area calculations: sum up areas from returned features
-            - For exclusions: request datasets separately, then filter spatially
-            - For simple lookups: return the data directly
-
-            CRITICAL RULES:
-            ❌ NEVER guess attribute names like "oppervlakte_min", "area", "bouwjaar" etc.
-            ❌ NEVER skip the discover_pdok_services step
-            ❌ NEVER assume you know the correct attribute names
-            ❌ NEVER use tools before writing your EXECUTION PLAN as comments
-            ❌ NEVER overcomplicate simple queries with unnecessary datasets
-            ✅ ALWAYS start by writing your EXECUTION PLAN as Python comments (# ...)
-            ✅ ALWAYS discover attributes first before making any data request
-            ✅ ALWAYS use the EXACT attribute names found by discover_pdok_services
-            ✅ ALWAYS retry with corrected attributes if first attempt fails
-            ✅ ALWAYS identify query type first to choose correct primary dataset
-            ✅ ALWAYS keep it simple - only use multiple datasets when truly needed
-
-            DATASET SELECTION GUIDE:
-            - Land use analysis → Use landuse service (bestandbodemgebruik:bestand_bodemgebruik_2015)
-            - Parcel/property analysis → Use cadastral service
-            - Building information → Use bag service  
-            - Administrative boundaries → Use cbs service
-            - Protected areas → Use natura2000 service
-
-            MULTI-DATASET SCENARIOS (only when explicitly needed):
-            When the user mentions exclusions like "exclude protected areas", "avoid buildings", "not in forests":
-            1. Identify the PRIMARY dataset (what they want)
-            2. Identify EXCLUSION datasets (what to avoid)  
-            3. Request each dataset SEPARATELY using appropriate services
-            4. Use spatial analysis to combine and filter datasets
-            5. Return the filtered results
-
-            COMMON SCENARIOS:
-            - "How much agricultural land..." → Land use query, use landuse service only
-            - "Show buildings in..." → Building query, use bag service only
-            - "Find parcels excluding protected areas" → Parcel query + natura2000 exclusion
-            - "Administrative boundaries of..." → Boundary query, use cbs service only
-
-            TECHNICAL REQUIREMENTS:
-            - PDOK services use Dutch projected coordinates EPSG:28992
-            - Import 'json' when working with geographic data
-            - Format geographic responses as GeoJSON
-
-            RESPONSE FORMAT:
-            Always return this JSON structure using proper format:
-            - text_description and geojson_data fields in a dictionary
-
-            EXAMPLE EXECUTIONS:
-
-            Land use example - "How much agricultural land is around Utrecht?":
-            ```python
-            # EXECUTION PLAN:
-            # 1. Query Type: Land use area calculation
-            # 2. Primary Data: Land use classification data (bestandbodemgebruik)
-            # 3. Location: Utrecht area with reasonable radius
-            # 4. Additional Data: None
-            # 5. Analysis: Filter for agricultural classifications, calculate total area
-            # 6. Expected Output: Total agricultural area in hectares around Utrecht
-            ```
-
-            Complex parcel example - "Find parcels for solar panels in Groningen, excluding protected areas":
-            ```python
-            # EXECUTION PLAN:
-            # 1. Query Type: Parcel suitability analysis with exclusions
-            # 2. Primary Data: Land parcels (cadastral)
-            # 3. Location: Groningen area
-            # 4. Additional Data: Protected areas (natura2000) for exclusion
-            # 5. Analysis: Get parcels, get protected areas, exclude overlaps
-            # 6. Expected Output: Suitable parcels for development
-            ```
-
-            START NOW: Write your EXECUTION PLAN as Python comments (# ...), then begin with discover_pdok_services tool.
+            Start with intent analysis in comments, then proceed with targeted discovery.
             """
         
-        print("🎯 AI has complete freedom to analyze and respond...")
-        print("🔧 No predefined workflows - AI chooses everything")
+        print("🎯 AI analyzing intent and making targeted requests...")
 
-        result = agent.run(minimal_context_prompt)
+        result = agent.run(intent_driven_prompt)
         
-        print(f"\n--- AI FLEXIBILITY RESULT DEBUG ---")
+        print(f"\n--- INTENT-DRIVEN RESULT DEBUG ---")
         print(f"Result type: {type(result)}")
         
-        # ENHANCED DEBUG: Print the FULL result to see what we're getting
-        print(f"FULL RESULT: {result}")
-        if isinstance(result, dict):
-            print(f"Result keys: {list(result.keys())}")
-            for key, value in result.items():
-                if isinstance(value, list):
-                    print(f"  {key}: list with {len(value)} items")
-                    if len(value) > 0:
-                        print(f"    First item type: {type(value[0])}")
-                        if isinstance(value[0], dict):
-                            print(f"    First item keys: {list(value[0].keys())}")
-                else:
-                    print(f"  {key}: {type(value)} - {str(value)[:100]}...")
-
-        # Handle different result types properly
+        # Enhanced result processing
         structured_response = None
         result_text = None
         
@@ -601,7 +924,7 @@ def query():
         if isinstance(result, dict):
             print("✅ AI returned structured dictionary response")
             structured_response = result
-            result_text = str(result)
+            result_text = result.get('text_description', str(result))
         else:
             # Extract text from various result formats
             if hasattr(result, 'content'):
@@ -615,16 +938,13 @@ def query():
             
             print(f"Result text preview: {result_text[:200]}...")
             
-            # Try to parse JSON from text if not already structured
+            # Try to parse JSON from text
             try:
                 import re
-                
-                # Look for various JSON patterns the AI might use
                 json_patterns = [
                     r'\{.*"text_description".*"geojson_data".*\}',
                     r'\{.*"description".*"features".*\}',
-                    r'\{.*"response".*"data".*\}',
-                    r'\{.*"message".*"results".*\}'
+                    r'\{.*"response".*"data".*\}'
                 ]
                 
                 for pattern in json_patterns:
@@ -635,7 +955,7 @@ def query():
                             parsed_response = json.loads(json_str)
                             if isinstance(parsed_response, dict):
                                 structured_response = parsed_response
-                                print(f"✅ Found AI-generated structured response with pattern: {pattern[:30]}...")
+                                print(f"✅ Found structured response")
                                 break
                         except json.JSONDecodeError:
                             continue
@@ -647,60 +967,66 @@ def query():
         if structured_response:
             print(f"🔍 Processing structured response: {list(structured_response.keys())}")
             
-            # Find text description
-            text_fields = ['text_description', 'description', 'response', 'message', 'summary']
-            response_text = None
+            # Extract components
+            response_text = (structured_response.get('text_description') or 
+                           structured_response.get('description') or 
+                           structured_response.get('response') or 
+                           structured_response.get('message'))
             
-            for text_field in text_fields:
-                if text_field in structured_response:
-                    response_text = structured_response[text_field]
-                    print(f"✅ Found text description in field: {text_field}")
-                    break
+            geojson_data = (structured_response.get('geojson_data') or 
+                          structured_response.get('features') or 
+                          structured_response.get('data'))
             
-            # ENHANCED: Extract and process geographic data
-            processed_features = extract_and_process_geographic_data(structured_response)
+            search_location = structured_response.get('search_location')
+            layer_type = structured_response.get('layer_type')
+            analysis_summary = structured_response.get('analysis_summary')
+            
+            # Process geographic data
+            processed_features = process_geojson_response(geojson_data)
             
             if processed_features and len(processed_features) > 0:
                 print(f"🗺️ Successfully processed geographic data: {len(processed_features)} features")
                 
+                # Detect layer type if not provided
+                if not layer_type:
+                    layer_type = detect_layer_type_from_features(processed_features)
+                
+                # Extract search location if not provided
+                if not search_location:
+                    search_location = extract_search_location_from_response(response_text, processed_features)
+                
+                # Create flexible legend data
+                legend_data = create_flexible_legend_data(processed_features, layer_type)
+                
                 # Update global state
                 current_map_state["features"] = processed_features
+                current_map_state["current_layer_type"] = layer_type
+                current_map_state["search_location"] = search_location
                 current_map_state["last_updated"] = datetime.now().isoformat()
+                
+                print(f"📍 Search location: {search_location}")
+                print(f"🏷️ Layer type: {layer_type}")
+                print(f"📊 Legend categories: {len(legend_data['categories']) if legend_data else 0}")
                 
                 return jsonify({
                     "response": response_text or "AI analysis completed with geographic results.",
                     "geojson_data": processed_features,
-                    "agent_type": "ai_flexible_geographic",
-                    "ai_method": "flexible_analysis",
-                    "tools_used": "ai_choice"
+                    "search_location": search_location,
+                    "layer_type": layer_type,
+                    "legend_data": legend_data,
+                    "analysis_summary": analysis_summary,
+                    "agent_type": "intent_driven_geographic",
+                    "ai_method": "intent_analysis",
+                    "tools_used": "targeted_discovery"
                 })
             else:
-                print("❌ No valid geographic data found in structured response")
-                
-                # Log what was actually found for debugging
-                for field_name, field_value in structured_response.items():
-                    print(f"   Field '{field_name}': {type(field_value)}")
-                    if isinstance(field_value, dict):
-                        print(f"     Dict keys: {list(field_value.keys())}")
-                        if 'type' in field_value:
-                            print(f"     Type: {field_value['type']}")
-                        if 'features' in field_value:
-                            print(f"     Features count: {len(field_value.get('features', []))}")
-            
-            # Structured response without geographic data but with text
-            if response_text:
-                print("📝 AI generated structured text response")
-                return jsonify({
-                    "response": response_text,
-                    "agent_type": "ai_flexible_text",
-                    "ai_method": "flexible_analysis", 
-                    "tools_used": "ai_choice"
-                })
+                print("❌ No valid geographic data found")
         
-        # ENHANCED: Search agent execution logs more thoroughly
+        # Fallback: Search agent execution logs for geographic data
         print("🔍 Searching agent logs for geographic data...")
         geographic_data = None
         description_text = None
+        search_location = None
         
         # Check agent memory for tool results
         if hasattr(agent, 'memory') and hasattr(agent.memory, 'steps'):
@@ -708,142 +1034,115 @@ def query():
             print(f"   📚 Checking memory.steps ({len(log_entries)} entries)...")
             
             for step_idx, log_entry in enumerate(reversed(log_entries)):
-                print(f"   Step {step_idx}: {type(log_entry)}")
-                
-                # Check for any tool call results
                 tool_calls_to_check = []
                 
                 if hasattr(log_entry, 'tool_calls'):
                     tool_calls_to_check.extend(log_entry.tool_calls)
-                    print(f"     Found {len(log_entry.tool_calls)} tool calls")
                 
-                if hasattr(log_entry, 'action'):
-                    if hasattr(log_entry.action, 'tool_calls'):
-                        tool_calls_to_check.extend(log_entry.action.tool_calls)
-                        print(f"     Found {len(log_entry.action.tool_calls)} action tool calls")
-                    elif hasattr(log_entry.action, 'result'):
-                        result_data = log_entry.action.result
-                        print(f"     Action result type: {type(result_data)}")
-                        if isinstance(result_data, dict):
-                            print(f"     Action result keys: {list(result_data.keys())}")
-                            # Look for any geographic data pattern
-                            geographic_data, description_text = _extract_geographic_data_flexible(result_data)
-                            if geographic_data:
-                                print(f"🧠 Found geographic data in action.result: {len(geographic_data)} features")
-                                break
+                if hasattr(log_entry, 'action') and hasattr(log_entry.action, 'tool_calls'):
+                    tool_calls_to_check.extend(log_entry.action.tool_calls)
                 
-                # Check individual tool call results
-                for tool_call_idx, tool_call in enumerate(tool_calls_to_check):
+                # Check tool call results
+                for tool_call in tool_calls_to_check:
                     if hasattr(tool_call, 'result'):
                         tool_result = tool_call.result
-                        tool_name = getattr(tool_call, 'tool_name', f'tool_{tool_call_idx}')
-                        
-                        print(f"     Tool '{tool_name}' result type: {type(tool_result)}")
+                        tool_name = getattr(tool_call, 'tool_name', 'unknown_tool')
                         
                         if isinstance(tool_result, dict):
-                            print(f"     Tool '{tool_name}' result keys: {list(tool_result.keys())}")
-                            
-                            # Flexible extraction of geographic data
-                            geo_data, desc_text = _extract_geographic_data_flexible(tool_result)
+                            # Look for geographic data
+                            geo_data, desc_text = extract_geographic_data_flexible(tool_result)
                             if geo_data:
                                 geographic_data = geo_data
-                                description_text = desc_text or f"AI analysis completed using {tool_name}"
+                                description_text = desc_text or f"Analysis completed using {tool_name}"
                                 print(f"🎯 Found geographic data from tool '{tool_name}': {len(geo_data)} features")
                                 break
+                            
+                            # Look for search location from location search tool
+                            if tool_name == 'search_location_coordinates' and 'lat' in tool_result and 'lon' in tool_result:
+                                search_location = {
+                                    "lat": tool_result['lat'],
+                                    "lon": tool_result['lon'],
+                                    "name": tool_result.get('name', 'Search Location')
+                                }
+                                print(f"📍 Found search location: {search_location}")
                 
                 if geographic_data:
                     break
         
-        # Process any geographic data found in logs
+        # Process geographic data from logs
         if geographic_data:
             print(f"🗺️ Processing geographic data from logs: {len(geographic_data)} features")
             
-            if isinstance(geographic_data, list):
-                serialized_features = []
-                for item in geographic_data:
-                    try:
-                        if isinstance(item, dict):
-                            serialized_item = ensure_json_serializable(item)
-                            
-                            # Flexible validation
-                            if _is_valid_geographic_feature(serialized_item):
-                                enhanced_feature = ensure_map_compatible_feature(serialized_item, len(serialized_features))
-                                if enhanced_feature:
-                                    serialized_features.append(enhanced_feature)
-                                        
-                    except Exception as e:
-                        print(f"❌ Error processing log feature: {e}")
-                        continue
+            serialized_features = []
+            for item in geographic_data:
+                try:
+                    if isinstance(item, dict) and is_valid_geographic_feature(item):
+                        serialized_item = ensure_json_serializable(item)
+                        enhanced_feature = ensure_map_compatible_feature(serialized_item, len(serialized_features))
+                        if enhanced_feature:
+                            serialized_features.append(enhanced_feature)
+                except Exception as e:
+                    print(f"❌ Error processing log feature: {e}")
+                    continue
+            
+            if serialized_features:
+                print(f"✅ Returning geographic data from logs: {len(serialized_features)} features")
                 
-                if serialized_features:
-                    print(f"✅ Returning geographic data from logs: {len(serialized_features)} features")
-                    
-                    current_map_state["features"] = serialized_features
-                    current_map_state["last_updated"] = datetime.now().isoformat()
-                    
-                    return jsonify({
-                        "response": description_text or "AI completed flexible spatial analysis.",
-                        "geojson_data": serialized_features,
-                        "agent_type": "ai_flexible_geographic_processed",
-                        "ai_method": "flexible_analysis",
-                        "tools_used": "ai_choice"
-                    })
+                # Detect layer type and create legend
+                layer_type = detect_layer_type_from_features(serialized_features)
+                legend_data = create_flexible_legend_data(serialized_features, layer_type)
+                
+                # Extract search location if not found yet
+                if not search_location:
+                    search_location = extract_search_location_from_response(description_text, serialized_features)
+                
+                # Update global state
+                current_map_state["features"] = serialized_features
+                current_map_state["current_layer_type"] = layer_type
+                current_map_state["search_location"] = search_location
+                current_map_state["last_updated"] = datetime.now().isoformat()
+                
+                return jsonify({
+                    "response": description_text or "AI completed intent-driven spatial analysis.",
+                    "geojson_data": serialized_features,
+                    "search_location": search_location,
+                    "layer_type": layer_type,
+                    "legend_data": legend_data,
+                    "agent_type": "intent_driven_geographic_processed",
+                    "ai_method": "intent_analysis",
+                    "tools_used": "targeted_discovery"
+                })
         
-        # Default: return whatever the AI said
-        print(f"💬 Returning flexible AI text response (no geographic data found)")
-        print(f"   Response content: {str(result_text)[:200]}...")
+        # Default: return text response
+        print(f"💬 Returning intent-driven text response")
         return jsonify({
             "response": str(result_text),
-            "agent_type": "ai_flexible_text",
-            "ai_method": "flexible_analysis",
-            "tools_used": "ai_choice"
+            "search_location": search_location,
+            "agent_type": "intent_driven_text",
+            "ai_method": "intent_analysis",
+            "tools_used": "targeted_discovery"
         })
         
     except Exception as e:
-        error_msg = f"Flexible AI error: {str(e)}"
+        error_msg = f"Intent-driven AI error: {str(e)}"
         print(f"❌ ERROR: {error_msg}")
         return jsonify({
             "error": error_msg,
             "agent_type": "error",
-            "tools_used": "none"
+            "tools_used": "intent_driven"
         })
 
     finally:
-        print("🎉 FLEXIBLE AI QUERY COMPLETED")
+        print("🎉 INTENT-DRIVEN ANALYSIS COMPLETED")
         print("="*80 + "\n")
-
-
-def extract_and_process_geographic_data(structured_response):
-    """Extract and process geographic data from AI response."""
-    data_fields = ['geojson_data', 'features', 'data', 'results', 'spatial_data']
-    
-    for data_field in data_fields:
-        if data_field in structured_response:
-            potential_data = structured_response[data_field]
-            print(f"🔍 Checking data field '{data_field}': {type(potential_data)}")
-            
-            # Try to process as GeoJSON (FeatureCollection or array)
-            processed_features = process_geojson_response(potential_data)
-            if processed_features and len(processed_features) > 0:
-                print(f"✅ Successfully processed {len(processed_features)} features from {data_field}")
-                return processed_features
-            
-            # Fallback: try existing logic for direct feature arrays
-            if isinstance(potential_data, list) and len(potential_data) > 0:
-                first_item = potential_data[0]
-                if isinstance(first_item, dict):
-                    has_geographic_fields = any(geo_field in first_item for geo_field in ['lat', 'lon', 'geometry', 'coordinates'])
-                    if has_geographic_fields:
-                        print(f"✅ Found legacy geographic data in field: {data_field}")
-                        return potential_data
-    
-    return None
-
 
 def process_geojson_response(data):
     """Process GeoJSON data from AI response and convert to frontend format."""
     try:
         print(f"🔍 Processing GeoJSON response: {type(data)}")
+        
+        if not data:
+            return None
         
         # Handle FeatureCollection format
         if isinstance(data, dict) and data.get('type') == 'FeatureCollection':
@@ -854,7 +1153,6 @@ def process_geojson_response(data):
             processed_features = []
             for i, feature in enumerate(features):
                 try:
-                    # Convert GeoJSON feature to frontend format
                     processed_feature = convert_geojson_feature_to_frontend(feature, i)
                     if processed_feature:
                         processed_features.append(processed_feature)
@@ -884,7 +1182,6 @@ def process_geojson_response(data):
         print(f"❌ Error processing GeoJSON: {e}")
         return None
 
-
 def convert_geojson_feature_to_frontend(geojson_feature, index):
     """Convert a single GeoJSON feature to frontend-compatible format."""
     try:
@@ -906,20 +1203,11 @@ def convert_geojson_feature_to_frontend(geojson_feature, index):
         # Extract properties
         properties = geojson_feature.get('properties', {})
         
-        # Create a meaningful name
-        building_id = properties.get('id', f'Building-{index+1}')
-        name = f"Building {building_id[-6:]}" if len(str(building_id)) > 6 else str(building_id)
+        # Create a meaningful name based on properties
+        name = create_feature_name(properties, index)
         
-        # Create description
-        desc_parts = []
-        if properties.get('bouwjaar'):
-            desc_parts.append(f"Built: {properties['bouwjaar']}")
-        if properties.get('oppervlakte') and properties['oppervlakte'] > 0:
-            desc_parts.append(f"Area: {properties['oppervlakte']}m²")
-        if properties.get('gebruiksdoel'):
-            desc_parts.append(f"Use: {properties['gebruiksdoel']}")
-            
-        description = " | ".join(desc_parts) if desc_parts else "Building feature"
+        # Create description based on properties
+        description = create_feature_description(properties)
         
         # Create frontend-compatible feature
         frontend_feature = {
@@ -929,10 +1217,7 @@ def convert_geojson_feature_to_frontend(geojson_feature, index):
             'lon': lon,
             'description': description,
             'geometry': geometry,
-            'properties': {
-                **properties,
-                'area_m2': properties.get('oppervlakte', 0)  # Normalize area field
-            }
+            'properties': ensure_json_serializable(properties)
         }
         
         return frontend_feature
@@ -941,6 +1226,86 @@ def convert_geojson_feature_to_frontend(geojson_feature, index):
         print(f"❌ Error converting feature {index}: {e}")
         return None
 
+def create_feature_name(properties, index):
+    """Create a meaningful name for a feature based on its properties."""
+    # Try different naming strategies based on available properties
+    
+    # Land use features
+    if 'bgb2015_hoofdklasse_label' in properties:
+        return f"Land Use: {properties['bgb2015_hoofdklasse_label']}"
+    elif 'hoofdklasse' in properties:
+        return f"Land Use: {properties['hoofdklasse']}"
+    elif 'bodemgebruik' in properties:
+        return f"Land Use: {properties['bodemgebruik']}"
+    
+    # Building features
+    elif 'bouwjaar' in properties:
+        year = properties['bouwjaar']
+        return f"Building ({year})"
+    elif 'bag_status' in properties:
+        return f"Building - {properties['bag_status']}"
+    
+    # Parcel features
+    elif 'perceelnummer' in properties:
+        return f"Parcel {properties['perceelnummer']}"
+    elif 'kadastraleGrootteWaarde' in properties:
+        area_ha = properties['kadastraleGrootteWaarde'] / 10000
+        return f"Parcel ({area_ha:.1f}ha)"
+    
+    # Environmental features
+    elif 'gebiedsnaam' in properties:
+        return f"Protected: {properties['gebiedsnaam']}"
+    elif 'naam' in properties:
+        return f"Area: {properties['naam']}"
+    
+    # Administrative features
+    elif 'gemeentenaam' in properties:
+        return f"Municipality: {properties['gemeentenaam']}"
+    elif 'wijknaam' in properties:
+        return f"District: {properties['wijknaam']}"
+    
+    # Generic fallback
+    else:
+        feature_id = properties.get('identificatie', properties.get('id', f'Feature-{index+1}'))
+        return f"Feature {str(feature_id)[-6:]}" if len(str(feature_id)) > 6 else str(feature_id)
+
+def create_feature_description(properties):
+    """Create a meaningful description for a feature based on its properties."""
+    desc_parts = []
+    
+    # Land use properties
+    if 'bgb2015_hoofdklasse_label' in properties:
+        desc_parts.append(f"Type: {properties['bgb2015_hoofdklasse_label']}")
+    
+    if 'shape_area' in properties and properties['shape_area'] > 0:
+        area_ha = properties['shape_area'] / 10000
+        desc_parts.append(f"Area: {area_ha:.1f}ha")
+    
+    # Building properties
+    if 'bouwjaar' in properties:
+        desc_parts.append(f"Built: {properties['bouwjaar']}")
+    
+    if 'oppervlakte' in properties and properties['oppervlakte'] > 0:
+        desc_parts.append(f"Area: {properties['oppervlakte']}m²")
+    
+    # Parcel properties
+    if 'kadastraleGrootteWaarde' in properties and properties['kadastraleGrootteWaarde'] > 0:
+        area_ha = properties['kadastraleGrootteWaarde'] / 10000
+        desc_parts.append(f"Size: {area_ha:.1f}ha")
+    
+    # Environmental properties
+    if 'type_gebied' in properties:
+        desc_parts.append(f"Type: {properties['type_gebied']}")
+    
+    # Administrative properties
+    if 'provincienaam' in properties:
+        desc_parts.append(f"Province: {properties['provincienaam']}")
+    
+    # Distance information
+    if 'distance_km' in properties:
+        desc_parts.append(f"Distance: {properties['distance_km']:.2f}km")
+    
+    return " | ".join(desc_parts) if desc_parts else "Feature"
 
 def calculate_centroid_from_geojson_geometry(geometry):
     """Calculate centroid from GeoJSON geometry."""
@@ -978,8 +1343,67 @@ def calculate_centroid_from_geojson_geometry(geometry):
         print(f"Error calculating centroid: {e}")
         return None
 
+def extract_geographic_data_flexible(data_dict):
+    """Flexibly extract geographic data from any tool result."""
+    geographic_data = None
+    description = None
+    
+    # Look for various patterns the AI might use
+    potential_geo_fields = [
+        'geojson_data', 'features', 'data', 'results', 'spatial_data', 
+        'buildings', 'parcels', 'locations', 'points', 'polygons'
+    ]
+    
+    potential_desc_fields = [
+        'text_description', 'description', 'summary', 'message', 
+        'response', 'analysis', 'explanation'
+    ]
+    
+    # Extract geographic data
+    for field in potential_geo_fields:
+        if field in data_dict:
+            potential_data = data_dict[field]
+            if isinstance(potential_data, list) and len(potential_data) > 0:
+                # Check if items look like geographic features
+                first_item = potential_data[0]
+                if isinstance(first_item, dict):
+                    if is_valid_geographic_feature(first_item):
+                        geographic_data = potential_data
+                        break
+    
+    # Extract description
+    for field in potential_desc_fields:
+        if field in data_dict:
+            description = data_dict[field]
+            break
+    
+    return geographic_data, description
+
+def is_valid_geographic_feature(feature_dict):
+    """Check if a dictionary looks like a valid geographic feature."""
+    if not isinstance(feature_dict, dict):
+        return False
+    
+    # Must have coordinates or geometry
+    has_coordinates = ('lat' in feature_dict and 'lon' in feature_dict)
+    has_geometry = 'geometry' in feature_dict
+    
+    if not (has_coordinates or has_geometry):
+        return False
+    
+    # If has coordinates, they should be reasonable for Netherlands
+    if has_coordinates:
+        lat = feature_dict.get('lat', 0)
+        lon = feature_dict.get('lon', 0)
+        
+        # Basic Netherlands bounds check
+        if not (50.0 <= lat <= 54.0 and 3.0 <= lon <= 8.0):
+            return False
+    
+    return True
+
 def ensure_map_compatible_feature(feature, index):
-    """Ensure feature has all required fields for frontend map display"""
+    """Ensure feature has all required fields for frontend map display."""
     try:
         # Create a copy to avoid modifying original
         enhanced_feature = feature.copy()
@@ -990,16 +1414,14 @@ def ensure_map_compatible_feature(feature, index):
         
         # Ensure 'name' field
         if 'name' not in enhanced_feature:
-            # Try to create a meaningful name
             properties = enhanced_feature.get('properties', {})
-            identificatie = properties.get('identificatie', f'Feature-{index+1}')
-            enhanced_feature['name'] = f"Building {identificatie[-6:]}" if len(str(identificatie)) > 6 else str(identificatie)
+            enhanced_feature['name'] = create_feature_name(properties, index)
         
         # Ensure 'lat' and 'lon' fields
         if 'lat' not in enhanced_feature or 'lon' not in enhanced_feature:
             # Try to extract from geometry
             geometry = enhanced_feature.get('geometry', {})
-            centroid = calculate_centroid_from_geometry(geometry)
+            centroid = calculate_centroid_from_geojson_geometry(geometry)
             if centroid:
                 enhanced_feature['lat'] = centroid[0]
                 enhanced_feature['lon'] = centroid[1]
@@ -1016,23 +1438,8 @@ def ensure_map_compatible_feature(feature, index):
         
         # Ensure 'description' field
         if 'description' not in enhanced_feature:
-            # Create description from properties
             properties = enhanced_feature.get('properties', {})
-            desc_parts = []
-            
-            # Add building info if available
-            if 'bouwjaar' in properties:
-                desc_parts.append(f"Built: {properties['bouwjaar']}")
-            
-            # Add area if available
-            area_fields = ['oppervlakte', 'oppervlakte_min', 'oppervlakte_max', 'area']
-            for area_field in area_fields:
-                if area_field in properties and properties[area_field]:
-                    area = properties[area_field]
-                    desc_parts.append(f"Area: {area}m²")
-                    break
-            
-            enhanced_feature['description'] = " | ".join(desc_parts) if desc_parts else "Building feature"
+            enhanced_feature['description'] = create_feature_description(properties)
         
         # Ensure 'geometry' field is valid
         if 'geometry' not in enhanced_feature or not enhanced_feature['geometry']:
@@ -1041,15 +1448,6 @@ def ensure_map_compatible_feature(feature, index):
                 'type': 'Point',
                 'coordinates': [lon, lat]
             }
-        else:
-            # Validate existing geometry
-            geometry = enhanced_feature['geometry']
-            if not validate_and_fix_geometry(geometry):
-                # Fallback to point geometry
-                enhanced_feature['geometry'] = {
-                    'type': 'Point',
-                    'coordinates': [lon, lat]
-                }
         
         # Ensure 'properties' field
         if 'properties' not in enhanced_feature:
@@ -1064,209 +1462,65 @@ def ensure_map_compatible_feature(feature, index):
         print(f"❌ Error enhancing feature {index}: {e}")
         return None
 
-
-def calculate_centroid_from_geometry(geometry):
-    """Calculate centroid from geometry object"""
+@app.route('/api/test-intent-analysis', methods=['POST'])
+def test_intent_analysis():
+    """Test endpoint for intent-driven analysis approach."""
+    data = request.json
+    test_query = data.get('query', 'Analyze agricultural land distribution in Utrecht province')
+    
     try:
-        if not geometry or 'type' not in geometry or 'coordinates' not in geometry:
-            return None
+        print(f"🧪 Testing intent-driven analysis with: '{test_query}'")
         
-        geom_type = geometry['type']
-        coordinates = geometry['coordinates']
+        # Simple intent analysis test
+        intent_mapping = {
+            "land_use_analysis": ["agricultural", "land use", "distribution", "bodemgebruik"],
+            "building_analysis": ["building", "construction", "bouwjaar", "address"],
+            "parcel_analysis": ["parcel", "property", "kadaster", "suitable"],
+            "environmental_analysis": ["protected", "nature", "natura2000", "conservation"],
+            "administrative_analysis": ["municipality", "province", "boundary", "administrative"]
+        }
         
-        if geom_type == 'Point':
-            # For point, coordinates are [lon, lat]
-            return [coordinates[1], coordinates[0]]  # Return [lat, lon]
+        detected_intent = "unknown"
+        recommended_service = "cadastral"
         
-        elif geom_type == 'Polygon':
-            # For polygon, take centroid of exterior ring
-            if coordinates and len(coordinates) > 0:
-                exterior_ring = coordinates[0]
-                if len(exterior_ring) > 0:
-                    # Calculate average of all points
-                    avg_lon = sum(coord[0] for coord in exterior_ring) / len(exterior_ring)
-                    avg_lat = sum(coord[1] for coord in exterior_ring) / len(exterior_ring)
-                    return [avg_lat, avg_lon]  # Return [lat, lon]
+        query_lower = test_query.lower()
+        for intent, keywords in intent_mapping.items():
+            if any(keyword in query_lower for keyword in keywords):
+                detected_intent = intent
+                if intent == "land_use_analysis":
+                    recommended_service = "bestandbodemgebruik"
+                elif intent == "building_analysis":
+                    recommended_service = "bag"
+                elif intent == "parcel_analysis":
+                    recommended_service = "cadastral"
+                elif intent == "environmental_analysis":
+                    recommended_service = "natura2000"
+                elif intent == "administrative_analysis":
+                    recommended_service = "cbs"
+                break
         
-        return None
+        return jsonify({
+            "success": True,
+            "query": test_query,
+            "detected_intent": detected_intent,
+            "recommended_service": recommended_service,
+            "message": f"Intent-driven system would use {recommended_service} service for {detected_intent}",
+            "workflow": [
+                f"1. Analyze intent: {detected_intent}",
+                f"2. Target service: {recommended_service}",
+                f"3. Discover attributes for {recommended_service} only",
+                f"4. Extract location if mentioned",
+                f"5. Make precise data request",
+                f"6. Generate flexible legend for layer type"
+            ],
+            "tools_available": tools_available
+        })
         
     except Exception as e:
-        print(f"Error calculating centroid: {e}")
-        return None
-
-
-# FIXED: Helper functions that were missing
-def _extract_geographic_data_flexible(data_dict):
-    """Flexibly extract geographic data from any tool result."""
-    geographic_data = None
-    description = None
-    
-    # Look for various patterns the AI might use
-    potential_geo_fields = [
-        'geojson_data', 'features', 'data', 'results', 'spatial_data', 
-        'buildings', 'parcels', 'locations', 'points', 'polygons'
-    ]
-    
-    potential_desc_fields = [
-        'text_description', 'description', 'summary', 'message', 
-        'response', 'analysis', 'explanation'
-    ]
-    
-    # Extract geographic data
-    for field in potential_geo_fields:
-        if field in data_dict:
-            potential_data = data_dict[field]
-            if isinstance(potential_data, list) and len(potential_data) > 0:
-                # Check if items look like geographic features
-                first_item = potential_data[0]
-                if isinstance(first_item, dict):
-                    if _is_valid_geographic_feature(first_item):
-                        geographic_data = potential_data
-                        break
-    
-    # Extract description
-    for field in potential_desc_fields:
-        if field in data_dict:
-            description = data_dict[field]
-            break
-    
-    return geographic_data, description
-
-
-def _is_valid_geographic_feature(feature_dict):
-    """Check if a dictionary looks like a valid geographic feature."""
-    if not isinstance(feature_dict, dict):
-        return False
-    
-    # Must have coordinates or geometry
-    has_coordinates = ('lat' in feature_dict and 'lon' in feature_dict)
-    has_geometry = 'geometry' in feature_dict
-    
-    if not (has_coordinates or has_geometry):
-        return False
-    
-    # If has coordinates, they should be reasonable for Netherlands
-    if has_coordinates:
-        lat = feature_dict.get('lat', 0)
-        lon = feature_dict.get('lon', 0)
-        
-        # Basic Netherlands bounds check
-        if not (50.0 <= lat <= 54.0 and 3.0 <= lon <= 8.0):
-            return False
-    
-    return True
-
-
-def _extract_geographic_data_flexible(data_dict):
-    """Flexibly extract geographic data from any tool result."""
-    geographic_data = None
-    description = None
-    
-    # Look for various patterns the AI might use
-    potential_geo_fields = [
-        'geojson_data', 'features', 'data', 'results', 'spatial_data', 
-        'buildings', 'parcels', 'locations', 'points', 'polygons'
-    ]
-    
-    potential_desc_fields = [
-        'text_description', 'description', 'summary', 'message', 
-        'response', 'analysis', 'explanation'
-    ]
-    
-    # Extract geographic data
-    for field in potential_geo_fields:
-        if field in data_dict:
-            potential_data = data_dict[field]
-            if isinstance(potential_data, list) and len(potential_data) > 0:
-                # Check if items look like geographic features
-                first_item = potential_data[0]
-                if isinstance(first_item, dict):
-                    if _is_valid_geographic_feature(first_item):
-                        geographic_data = potential_data
-                        break
-    
-    # Extract description
-    for field in potential_desc_fields:
-        if field in data_dict:
-            description = data_dict[field]
-            break
-    
-    return geographic_data, description
-
-
-def _is_valid_geographic_feature(feature_dict):
-    """Check if a dictionary looks like a valid geographic feature."""
-    if not isinstance(feature_dict, dict):
-        return False
-    
-    # Must have coordinates or geometry
-    has_coordinates = ('lat' in feature_dict and 'lon' in feature_dict)
-    has_geometry = 'geometry' in feature_dict
-    
-    if not (has_coordinates or has_geometry):
-        return False
-    
-    # If has coordinates, they should be reasonable for Netherlands
-    if has_coordinates:
-        lat = feature_dict.get('lat', 0)
-        lon = feature_dict.get('lon', 0)
-        
-        # Basic Netherlands bounds check
-        if not (50.0 <= lat <= 54.0 and 3.0 <= lon <= 8.0):
-            return False
-    
-    return True
-
-
-
-
-def debug_geojson_format(features):
-    """Debug function to inspect GeoJSON data format"""
-    print("\n=== GEOJSON DEBUG ===")
-    print(f"Number of features: {len(features)}")
-    
-    if features:
-        first_feature = features[0]
-        print(f"First feature type: {type(first_feature)}")
-        print(f"First feature keys: {list(first_feature.keys()) if isinstance(first_feature, dict) else 'Not a dict'}")
-        
-        # Check required fields for your frontend
-        required_fields = ['type', 'name', 'lat', 'lon', 'description', 'geometry', 'properties']
-        missing_fields = []
-        
-        for field in required_fields:
-            if field not in first_feature:
-                missing_fields.append(field)
-        
-        if missing_fields:
-            print(f"❌ Missing required fields: {missing_fields}")
-        else:
-            print("✅ All required fields present")
-        
-        # Check coordinate values
-        if 'lat' in first_feature and 'lon' in first_feature:
-            lat = first_feature['lat']
-            lon = first_feature['lon']
-            print(f"Coordinates: lat={lat}, lon={lon}")
-            
-            # Check if coordinates are reasonable for Netherlands
-            if not (50.0 <= lat <= 54.0 and 3.0 <= lon <= 8.0):
-                print(f"⚠️ Coordinates outside Netherlands bounds")
-        
-        # Check geometry format
-        if 'geometry' in first_feature:
-            geom = first_feature['geometry']
-            print(f"Geometry type: {geom.get('type', 'Unknown')}")
-            if 'coordinates' in geom:
-                coords = geom['coordinates']
-                print(f"Geometry coordinates sample: {str(coords)[:100]}...")
-        
-        # Print full first feature (truncated)
-        print(f"Sample feature: {str(first_feature)[:500]}...")
-    
-    print("===================\n")
-
-
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        })
 
 @app.route('/api/map-state', methods=['GET'])
 def get_map_state():
@@ -1280,10 +1534,10 @@ def reload_system_prompt():
     global agent, tools_available
     try:
         print("🔄 Reloading system prompt...")
-        agent, tools_available = create_agent_with_ai_intelligence()
+        agent, tools_available = create_agent_with_intent_driven_tools()
         return jsonify({
             "success": True,
-            "message": "System prompt reloaded successfully with AI INTELLIGENCE"
+            "message": "System prompt reloaded successfully with INTENT-DRIVEN approach"
         })
     except Exception as e:
         error_msg = f"Error reloading system prompt: {str(e)}"
@@ -1293,86 +1547,316 @@ def reload_system_prompt():
             "error": error_msg
         })
 
-@app.route('/api/test-ai-intelligence', methods=['POST'])
-def test_ai_intelligence():
-    """Test endpoint for AI intelligence approach."""
-    data = request.json
-    test_query = data.get('query', 'Show me buildings near Amsterdam')
-    
+@app.route('/api/legend-data', methods=['GET'])
+def get_legend_data():
+    """Get legend data for current features."""
+    global current_map_state
     try:
-        print(f"🧪 Testing AI intelligence with: '{test_query}'")
+        features = current_map_state.get("features", [])
+        layer_type = current_map_state.get("current_layer_type", "unknown")
         
-        # Simple test of AI analysis
+        if not features:
+            return jsonify({
+                "legend_data": None,
+                "message": "No features currently displayed"
+            })
+        
+        legend_data = create_flexible_legend_data(features, layer_type)
+        
+        return jsonify({
+            "legend_data": legend_data,
+            "layer_type": layer_type,
+            "feature_count": len(features)
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "error": f"Error generating legend data: {str(e)}"
+        })
+
+@app.route('/api/search-location', methods=['GET'])
+def get_search_location():
+    """Get current search location for location pin display."""
+    global current_map_state
+    try:
+        search_location = current_map_state.get("search_location")
+        
+        return jsonify({
+            "search_location": search_location,
+            "has_location": search_location is not None
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "error": f"Error getting search location: {str(e)}"
+        })
+
+@app.route('/api/layer-info', methods=['GET'])
+def get_layer_info():
+    """Get information about the current layer type and statistics."""
+    global current_map_state
+    try:
+        features = current_map_state.get("features", [])
+        layer_type = current_map_state.get("current_layer_type", "unknown")
+        statistics = current_map_state.get("statistics", {})
+        
+        layer_info = {
+            "layer_type": layer_type,
+            "feature_count": len(features),
+            "statistics": statistics,
+            "last_updated": current_map_state.get("last_updated"),
+            "has_features": len(features) > 0
+        }
+        
+        # Add layer-specific information
+        if layer_type == "land_use":
+            layer_info["display_name"] = "Land Use Classification"
+            layer_info["icon"] = "🌾"
+            layer_info["description"] = "Land use data from CBS Bestand Bodemgebruik"
+        elif layer_type == "buildings":
+            layer_info["display_name"] = "Buildings"
+            layer_info["icon"] = "🏠"
+            layer_info["description"] = "Building data from BAG (Buildings and Addresses)"
+        elif layer_type == "parcels":
+            layer_info["display_name"] = "Cadastral Parcels"
+            layer_info["icon"] = "📐"
+            layer_info["description"] = "Parcel data from Kadastrale Kaart"
+        elif layer_type == "environmental":
+            layer_info["display_name"] = "Protected Areas"
+            layer_info["icon"] = "🌿"
+            layer_info["description"] = "Environmental protection data"
+        elif layer_type == "administrative":
+            layer_info["display_name"] = "Administrative Boundaries"
+            layer_info["icon"] = "🗺️"
+            layer_info["description"] = "Administrative boundary data from CBS"
+        else:
+            layer_info["display_name"] = "Features"
+            layer_info["icon"] = "📊"
+            layer_info["description"] = "Geographic features"
+        
+        return jsonify(layer_info)
+        
+    except Exception as e:
+        return jsonify({
+            "error": f"Error getting layer info: {str(e)}"
+        })
+
+@app.route('/api/clear-map', methods=['POST'])
+def clear_map():
+    """Clear all features from the map."""
+    global current_map_state
+    try:
+        current_map_state["features"] = []
+        current_map_state["current_layer_type"] = None
+        current_map_state["search_location"] = None
+        current_map_state["statistics"] = {}
+        current_map_state["last_updated"] = datetime.now().isoformat()
+        
         return jsonify({
             "success": True,
-            "query": test_query,
-            "message": "AI intelligence system is ready to analyze this query",
-            "ai_approach": "The AI will analyze the query, discover services, find locations, and construct appropriate API calls",
-            "tools_available": tools_available
+            "message": "Map cleared successfully"
         })
         
     except Exception as e:
         return jsonify({
             "success": False,
-            "error": str(e)
+            "error": f"Error clearing map: {str(e)}"
+        })
+
+@app.route('/api/export-features', methods=['GET'])
+def export_features():
+    """Export current features as GeoJSON."""
+    global current_map_state
+    try:
+        features = current_map_state.get("features", [])
+        layer_type = current_map_state.get("current_layer_type", "unknown")
+        search_location = current_map_state.get("search_location")
+        
+        if not features:
+            return jsonify({
+                "error": "No features to export"
+            })
+        
+        # Create GeoJSON FeatureCollection
+        geojson = {
+            "type": "FeatureCollection",
+            "features": features,
+            "metadata": {
+                "layer_type": layer_type,
+                "feature_count": len(features),
+                "export_timestamp": datetime.now().isoformat(),
+                "search_location": search_location,
+                "generated_by": "PDOK Intent-Driven Analysis System"
+            }
+        }
+        
+        return jsonify(geojson)
+        
+    except Exception as e:
+        return jsonify({
+            "error": f"Error exporting features: {str(e)}"
+        })
+
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    """Health check endpoint."""
+    global current_map_state
+    try:
+        health_status = {
+            "status": "healthy",
+            "timestamp": datetime.now().isoformat(),
+            "features_loaded": len(current_map_state.get("features", [])),
+            "tools_available": tools_available,
+            "agent_initialized": agent is not None,
+            "services": {
+                "openai": bool(os.getenv('OPENAI_API_KEY')),
+                "pdok": True,  # Assume PDOK is available
+                "coordinate_conversion": True
+            }
+        }
+        
+        return jsonify(health_status)
+        
+    except Exception as e:
+        return jsonify({
+            "status": "unhealthy",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        })
+
+@app.route('/api/debug', methods=['GET'])
+def debug_info():
+    """Debug information endpoint."""
+    global current_map_state
+    try:
+        debug_data = {
+            "current_map_state": {
+                "feature_count": len(current_map_state.get("features", [])),
+                "layer_type": current_map_state.get("current_layer_type"),
+                "search_location": current_map_state.get("search_location"),
+                "last_updated": current_map_state.get("last_updated"),
+                "center": current_map_state.get("center"),
+                "zoom": current_map_state.get("zoom")
+            },
+            "agent_info": {
+                "agent_available": agent is not None,
+                "tools_available": tools_available,
+                "max_steps": getattr(agent, 'max_steps', None) if agent else None
+            },
+            "environment": {
+                "debug_mode": app.debug,
+                "openai_configured": bool(os.getenv('OPENAI_API_KEY')),
+                "flask_env": os.getenv('FLASK_ENV', 'production')
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        return jsonify(debug_data)
+        
+    except Exception as e:
+        return jsonify({
+            "error": f"Error getting debug info: {str(e)}"
         })
 
 if __name__ == '__main__':
-    print("🚀 Starting AI-INTELLIGENT Map-Aware Flask server")
+    print("🚀 Starting INTENT-DRIVEN Map-Aware Flask Server with Enhanced Features")
     print("="*80)
-    print("🧠 AI INTELLIGENCE ARCHITECTURE:")
-    print("  ✅ AI analyzes user queries for intent (NOT tools)")
-    print("  ✅ AI extracts parameters and filters from requests")
-    print("  ✅ AI discovers available PDOK services using tools")
-    print("  ✅ AI constructs appropriate API calls based on analysis")
-    print("  ✅ AI makes intelligent decisions about service selection")
-    print("  ✅ AI formats results for map display")
+    print("🎯 INTENT-DRIVEN ARCHITECTURE:")
+    print("  ✅ AI analyzes user intent FIRST")
+    print("  ✅ AI targets SPECIFIC service based on intent")
+    print("  ✅ AI discovers attributes for ONLY needed service")
+    print("  ✅ AI uses discovered attributes (no hardcoding)")
+    print("  ✅ AI matches correct service to analysis type")
+    print("  ✅ Flexible legend system for all layer types")
+    print("  ✅ Search location pin display")
     
-    print("\n🧠 HOW AI INTELLIGENCE WORKS:")
-    print("  1. AI receives user query")
-    print("  2. AI analyzes intent and extracts parameters")  
-    print("  3. AI uses discover_pdok_services to learn available endpoints")
-    print("  4. AI uses search_location_coordinates if location mentioned")
-    print("  5. AI selects appropriate service/layer based on analysis")
-    print("  6. AI constructs filters based on user request")
-    print("  7. AI uses request_pdok_data with determined parameters")
-    print("  8. AI formats results for map display")
+    print("\n🎯 SERVICE INTENT MAPPING:")
+    print("  🌾 Land use analysis → bestandbodemgebruik service")
+    print("  🏠 Building analysis → bag service")
+    print("  📐 Parcel analysis → cadastral service")
+    print("  🌿 Environmental analysis → natura2000 service")
+    print("  🗺️ Administrative analysis → cbs service")
     
-    print("\n🔧 TOOLS AVAILABLE FOR AI:")
+    print("\n🔧 ESSENTIAL TOOLS ONLY:")
     if tools_available:
-        print("  🔍 discover_pdok_services: For AI to learn about endpoints")
-        print("  📍 search_location_coordinates: For AI to find locations")
-        print("  🌐 request_pdok_data: For AI to make WFS requests")
-    else:
-        print("  📊 Basic analysis and question answering tools")
+        print("  🎯 Intent-driven discovery: Targeted service discovery")
+        print("  📍 Location search: Find coordinates with pin display")
+        print("  🌐 Flexible data fetching: Precise data requests")
+        print("  🧮 Spatial analysis: Custom analysis operations")
+        print("  🔄 Coordinate conversion: WGS84 ↔ RD New")
     
-    print("  📊 analyze_current_map_features: For map analysis")
-    print("  🗺️ get_map_context_info: For map context")
-    print("  ❓ answer_map_question: For general questions")
+    print("\n🆕 ENHANCED FEATURES:")
+    print("  📍 Search location pins: Visual markers for queried locations")
+    print("  🏷️ Flexible legends: Automatic legend generation for any layer type")
+    print("    - 🌾 Land use: Classification-based legends")
+    print("    - 🏠 Buildings: Age or area-based legends")
+    print("    - 📐 Parcels: Size-based legends")
+    print("    - 🌿 Environmental: Protection type legends")
+    print("    - 🗺️ Administrative: Boundary type legends")
+    print("  📊 Layer detection: Automatic detection of data type")
+    print("  🎨 Dynamic styling: Context-aware map styling")
     
-    print("\nTEST ENDPOINTS:")
-    print("  🧪 POST /api/test-ai-intelligence - Test AI intelligence")
+    print("\n🗑️ CLEANED UP:")
+    print("  ❌ Removed 8+ redundant tools")
+    print("  ❌ Removed hardcoded attribute dependencies")
+    print("  ❌ Removed all-service discovery approach")
+    print("  ❌ Removed complex multi-layer tools")
     
-    print("\nEXAMPLE QUERIES FOR AI INTELLIGENCE:")
-    print("  • 'Show me buildings near Leonard Springerlaan 37, Groningen with area > 300m²'")
-    print("  • 'Find large buildings in Amsterdam built before 1950'") 
-    print("  • 'What addresses are on Damrak street in Amsterdam?'")
-    print("  • 'Show me residential properties in Utrecht'")
-    print("  • 'What PDOK services are available?'")
+    print("\nEXAMPLE INTENT-DRIVEN QUERIES:")
+    print("  🌾 'Analyze agricultural land distribution in Utrecht province'")
+    print("     → Intent: land_use_analysis → Service: bestandbodemgebruik → Legend: Land use types")
+    print("  🏠 'Show me buildings near Amsterdam built before 1950'")
+    print("     → Intent: building_analysis → Service: bag → Legend: Building ages")
+    print("  📐 'Find large parcels suitable for development in Groningen'")
+    print("     → Intent: parcel_analysis → Service: cadastral → Legend: Parcel sizes")
+    print("  🌿 'Show protected nature areas around Rotterdam'")
+    print("     → Intent: environmental_analysis → Service: natura2000 → Legend: Protection types")
+    print("  🗺️ 'What are the municipal boundaries of Utrecht?'")
+    print("     → Intent: administrative_analysis → Service: cbs → Legend: Boundary types")
     
     print("\n" + "="*80)
     print(f"🌐 Server endpoints:")
     print(f"  📱 Main app: http://localhost:5000")
-    print(f"  🤖 Chat API: POST /api/query")
-    print(f"  🗺️ Map state: GET /api/map-state") 
+    print(f"  🎯 Intent-driven API: POST /api/query")
+    print(f"  🗺️ Map state: GET /api/map-state")
     print(f"  🔄 Reload prompt: POST /api/reload-prompt")
+    print(f"  🧪 Test intent analysis: POST /api/test-intent-analysis")
     
-    print("\n🧠 THE AI INTELLIGENCE DIFFERENCE:")
-    print("  ✅ AI ANALYZES user requests (not tools)")
-    print("  ✅ AI EXTRACTS parameters and filters")
-    print("  ✅ AI DISCOVERS services dynamically")
-    print("  ✅ AI CONSTRUCTS API calls intelligently")
-    print("  ✅ AI MAKES all decisions based on analysis")
-    print()
+    print("\n🎯 THE INTENT-DRIVEN DIFFERENCE:")
+    print("  ✅ AI ANALYZES intent before any tool use")
+    print("  ✅ AI TARGETS specific service only")
+    print("  ✅ AI DISCOVERS attributes dynamically")
+    print("  ✅ AI MATCHES service to analysis type")
+    print("  ✅ AI USES discovered names (no hardcoding)")
+    print("  ✅ FLEXIBLE legends for any data type")
+    print("  ✅ SEARCH LOCATION pins for user orientation")
+    print("  ✅ LAYER-AWARE styling and statistics")
     
-    app.run(debug=True, port=5000)
+    print("\n🔧 FIXED ISSUES:")
+    print("  ✅ No more wrong service selection")
+    print("  ✅ No more hardcoded attributes")
+    print("  ✅ No more all-service discovery")
+    print("  ✅ Flexible legends for all layer types")
+    print("  ✅ Search location visualization")
+    print("  ✅ Streamlined tool architecture")
+    
+    print("\n📋 STARTUP CHECKLIST:")
+    print("  1. ✅ OpenAI API key configured")
+    print("  2. ⚠️  Update system_prompt.yml with intent-driven version")
+    print("  3. ⚠️  Add enhanced_discovery_tool.py to tools directory")
+    print("  4. ⚠️  Clean up redundant tools (see cleanup guide)")
+    print("  5. ⚠️  Test with: 'Analyze agricultural land in Utrecht province'")
+    
+    print("\n🎉 READY TO START!")
+    print("="*80)
+    
+    try:
+        app.run(debug=True, port=5000, host='0.0.0.0')
+    except KeyboardInterrupt:
+        print("\n👋 Server shutdown gracefully")
+    except Exception as e:
+        print(f"\n❌ Server error: {e}")
+        print("Check your configuration and try again")
+    finally:
+        print("\n🔧 Intent-driven PDOK analysis server stopped")
+        print("Thank you for using the enhanced map-aware system!")
