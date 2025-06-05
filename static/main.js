@@ -1156,7 +1156,7 @@ try {
                                 <p className="text-red-600 font-medium">📍 {searchLocation.name}</p>
                             )}
                             {features.length > 0 && (
-                                <p className="text-blue-600 font-medium">{features.length} buildings loaded</p>
+                                <p className="text-blue-600 font-medium">{features.length} Features loaded</p>
                             )}
                         </div>
                     </div>

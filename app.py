@@ -874,8 +874,9 @@ def query():
             ✅ ALWAYS use exact discovered attribute names
             ✅ ALWAYS match service to analysis type
             ✅ ALWAYS include search location information
-            ✅ ALWAYS make sure the retirved coordnates from the location search are in rdnew format that is critical for making querry to the PDOK services
-            ✅ ALWAYS import json if dealing with geographic data
+            ✅ ALWAYS make sure the retrieved coordnates from the location search are in RdNew EPSG:28992 format that is critical for making querry to the PDOK services
+            ✅ ALWAYS return structured JSON response
+            ✅ If Data retieval fails, try again with either WGS84 or EPSG:28992, one of them should work import json if dealing with geographic data
             🎯 SERVICE MAPPING:
             - "agricultural land", "land use", "distribution" → bestandbodemgebruik service
             - "buildings", "construction", "bouwjaar" → bag service

@@ -1,4 +1,4 @@
-# tools/enhanced_discovery_tool.py
+# tools/enhanced_discovery_tool.py - FIXED VERSION
 
 import requests
 import json
@@ -10,26 +10,28 @@ from typing import Dict, List, Optional, Union, Tuple
 
 class IntentDrivenPDOKDiscoveryTool(Tool):
     """
-    Intent-driven PDOK service discovery that focuses on specific services based on user needs.
-    Instead of discovering all services, this tool targets specific services based on analysis intent.
+    FIXED: Complete enhanced PDOK service discovery with correct coordinate systems
+    and robust sample data analysis.
     """
     
     name = "discover_pdok_services"
-    description = """Discover specific PDOK WFS services based on analysis intent.
+    description = """Discover specific PDOK WFS services with intelligent attribute analysis.
 
-This tool helps the AI understand what specific PDOK service contains the data needed for analysis.
-The AI should specify which service to discover based on the user's intent.
+        This enhanced tool provides complete discovery capabilities:
+        1. Service discovery based on user intent
+        2. Attribute schema discovery 
+        3. Sample data analysis to understand actual values
+        4. Intelligent filter recommendations
+        5. Value-based guidance for query construction
+        6. Use sample size of 25 to limit API calls
 
-Supported services:
-- 'bestandbodemgebruik' or 'landuse': Land use classification data (agricultural, urban, etc.)
-- 'bag': Buildings and addresses 
-- 'cadastral': Cadastral parcels and boundaries
-- 'natura2000': Protected nature areas
-- 'cbs': Administrative boundaries and statistics
-- 'bgt': Detailed topography
-- 'wetlands': Protected wetland areas
+        FIXED ISSUES:
+        - Correct coordinate system configurations
+        - Robust coordinate transformations  
+        - Better sample data analysis
+        - Improved error handling
 
-The tool returns detailed attribute information for targeted analysis."""
+        Returns comprehensive analysis including actual attribute values for intelligent filtering."""
     
     inputs = {
         "service_name": {
@@ -40,6 +42,21 @@ The tool returns detailed attribute information for targeted analysis."""
             "type": "boolean",
             "description": "Whether to get detailed attribute information (default: True)",
             "nullable": True
+        },
+        "sample_data": {
+            "type": "boolean",
+            "description": "Whether to sample actual data to understand attribute values (default: True)",
+            "nullable": True
+        },
+        "location_center": {
+            "type": "object",
+            "description": "Center point as list [lat, lon] for sampling data (optional)",
+            "nullable": True
+        },
+        "sample_size": {
+            "type": "integer",
+            "description": "Number of features to sample for analysis (default: 25)",
+            "nullable": True
         }
     }
     output_type = "object"
@@ -48,31 +65,32 @@ The tool returns detailed attribute information for targeted analysis."""
     def __init__(self):
         super().__init__()
         
-        # Enhanced service definitions with land use service included
+        # FIXED: Correct coordinate systems for each service
         self.services = {
             "bestandbodemgebruik": {
                 "name": "CBS - Land Use Database (Bestand Bodemgebruik)",
                 "url": "https://service.pdok.nl/cbs/bestandbodemgebruik/2015/wfs/v1_0",
-                "description": "Detailed land use classification for the Netherlands from 2015. Comprehensive dataset showing how land is actually used across the country.",
-                "typical_use": "Agricultural land analysis, urban planning, environmental studies, land use distribution",
-                "keywords": ["land use", "agriculture", "urban planning", "bodemgebruik", "classification"],
-                "coordinate_system": "EPSG:28992",
+                "description": "Detailed land use classification for the Netherlands from 2015",
+                "coordinate_system": "EPSG:28992",  # FIXED: Uses RD New, not WGS84
                 "primary_layer": "bestandbodemgebruik:bestand_bodemgebruik_2015",
-                "feature_count": "189,601 polygons",
-                "coverage": "Entire Netherlands",
+                "analysis_focus": "land_use_classification",
+                "expected_classification_fields": ["bodemgebruik", "categorie"],
+                "expected_area_fields": ["shape_area"],
                 "key_attributes": {
-                    "expected": ["bgb2015_hoofdklasse_code", "bgb2015_hoofdklasse_label", "shape_area"],
-                    "description": "Land use classification codes and area measurements"
+                    "expected": ["bodemgebruik", "categorie", "bg2015"],
+                    "description": "Land use classification and category information"
                 }
             },
             "bag": {
                 "name": "BAG - Buildings and Addresses",
                 "url": "https://service.pdok.nl/lv/bag/wfs/v2_0",
                 "description": "Dutch Buildings and Addresses Database",
-                "typical_use": "Building analysis, address lookup, construction information",
-                "keywords": ["buildings", "addresses", "construction", "bouwjaar"],
-                "coordinate_system": "EPSG:28992",
+                "coordinate_system": "EPSG:28992",  # RD New
                 "primary_layer": "bag:pand",
+                "analysis_focus": "building_characteristics",
+                "expected_classification_fields": ["status", "pandstatus"],
+                "expected_area_fields": ["oppervlakte"],
+                "expected_temporal_fields": ["bouwjaar"],
                 "key_attributes": {
                     "expected": ["bouwjaar", "oppervlakte", "status"],
                     "description": "Building construction year, area, and status information"
@@ -82,23 +100,24 @@ The tool returns detailed attribute information for targeted analysis."""
                 "name": "Cadastral Map - Kadastrale Kaart v5",
                 "url": "https://service.pdok.nl/kadaster/kadastralekaart/wfs/v5_0",
                 "description": "Cadastral parcel boundaries and reference information",
-                "typical_use": "Parcel visualization, property boundaries, cadastral reference",
-                "keywords": ["parcels", "boundaries", "kadaster", "property"],
-                "coordinate_system": "EPSG:28992",
+                "coordinate_system": "EPSG:28992",  # RD New
                 "primary_layer": "kadastralekaart:Perceel",
+                "analysis_focus": "parcel_properties",
+                "expected_area_fields": ["kadastraleGrootteWaarde"],
+                "expected_classification_fields": ["perceeltype"],
                 "key_attributes": {
                     "expected": ["kadastraleGrootteWaarde", "perceelnummer"],
-                    "description": "Parcel area in square meters and identification numbers"
+                    "description": "Parcel area and identification"
                 }
             },
             "natura2000": {
                 "name": "Natura 2000 - Protected Nature Areas",
                 "url": "https://service.pdok.nl/rvo/natura2000/wfs/v1_0",
                 "description": "EU protected natural areas network",
-                "typical_use": "Environmental protection analysis, conservation planning",
-                "keywords": ["protected areas", "nature", "conservation", "environment"],
-                "coordinate_system": "EPSG:28992",
+                "coordinate_system": "EPSG:28992",  # RD New
                 "primary_layer": "natura2000:natura2000",
+                "analysis_focus": "environmental_protection",
+                "expected_classification_fields": ["type_gebied", "naam"],
                 "key_attributes": {
                     "expected": ["naam", "gebiedsnaam", "type_gebied"],
                     "description": "Protected area names and types"
@@ -108,128 +127,82 @@ The tool returns detailed attribute information for targeted analysis."""
                 "name": "CBS - Administrative Boundaries",
                 "url": "https://service.pdok.nl/cbs/wijkenbuurten/wfs/v1_0",
                 "description": "Administrative boundaries and statistical areas",
-                "typical_use": "Municipal analysis, administrative context, demographic studies",
-                "keywords": ["boundaries", "municipalities", "statistics", "administrative"],
-                "coordinate_system": "EPSG:28992",
+                "coordinate_system": "EPSG:28992",  # RD New
                 "primary_layer": "wijkenbuurten:cbs_gemeente_2023_gegeneraliseerd",
+                "analysis_focus": "administrative_boundaries",
+                "expected_classification_fields": ["gemeentenaam", "provincienaam"],
                 "key_attributes": {
-                    "expected": ["gemeentenaam", "provinciename", "gemeentecode"],
-                    "description": "Municipality and province names and codes"
-                }
-            },
-            "bgt": {
-                "name": "BGT - Large Scale Topography",
-                "url": "https://service.pdok.nl/lv/bgt/wfs/v1_0", 
-                "description": "Detailed topographic features",
-                "typical_use": "Infrastructure mapping, detailed topographic analysis",
-                "keywords": ["topography", "infrastructure", "roads", "water"],
-                "coordinate_system": "EPSG:28992",
-                "primary_layer": "varies",
-                "key_attributes": {
-                    "expected": ["varies by layer"],
-                    "description": "Depends on specific BGT layer"
-                }
-            },
-            "wetlands": {
-                "name": "Wetlands - Ramsar Protected Wetlands",
-                "url": "https://service.pdok.nl/rvo/beschermdegebieden/wetlands/wfs/v1_0",
-                "description": "Protected wetland areas under Ramsar Convention",
-                "typical_use": "Wetland protection analysis, water management",
-                "keywords": ["wetlands", "water", "protection", "ramsar"],
-                "coordinate_system": "EPSG:28992", 
-                "primary_layer": "beschermdegebieden:protectedsite",
-                "key_attributes": {
-                    "expected": ["naam", "type_bescherming"],
-                    "description": "Wetland names and protection types"
+                    "expected": ["gemeentenaam", "provincienaam", "gemeentecode"],
+                    "description": "Municipality and province information"
                 }
             }
         }
     
-    def forward(self, service_name: str, get_attributes: Optional[bool] = True) -> Dict:
-        """Discover specific PDOK service based on intent."""
+    def forward(self, service_name: str, get_attributes: Optional[bool] = True, 
+                sample_data: Optional[bool] = True, location_center: Optional[Union[List[float], Dict]] = None,
+                sample_size: Optional[int] = 25) -> Dict:
+        """FIXED: Discover specific PDOK service with robust error handling."""
         try:
-            print(f"🎯 Intent-driven PDOK discovery: {service_name}")
+            print(f"🎯 FIXED Enhanced PDOK discovery: {service_name}")
             
-            # Handle aliases for land use service
+            # Handle aliases
             if service_name in ["landuse", "land_use", "bodemgebruik"]:
                 service_name = "bestandbodemgebruik"
             
-            if service_name == "all":
-                return self._discover_all_services(get_attributes)
-            elif service_name in self.services:
-                return self._discover_single_service(service_name, get_attributes)
-            else:
+            if service_name not in self.services:
                 available_services = list(self.services.keys())
                 return {
-                    "error": f"Unknown service: {service_name}. Available services: {available_services}",
-                    "available_services": available_services,
-                    "service_mapping": {
-                        "land_use_analysis": "bestandbodemgebruik",
-                        "building_analysis": "bag", 
-                        "parcel_analysis": "cadastral",
-                        "environmental_analysis": "natura2000",
-                        "boundary_analysis": "cbs"
-                    }
+                    "error": f"Unknown service: {service_name}. Available: {available_services}",
+                    "available_services": available_services
                 }
+            
+            return self._discover_single_service(service_name, get_attributes, sample_data, location_center, sample_size)
                 
         except Exception as e:
-            return {"error": f"Service discovery error: {str(e)}"}
+            error_msg = f"Enhanced discovery error: {str(e)}"
+            print(f"❌ {error_msg}")
+            return {"error": error_msg, "discovery_success": False}
     
-    def _discover_single_service(self, service_name: str, get_attributes: bool) -> Dict:
-        """Discover a single specific service."""
+    def _discover_single_service(self, service_name: str, get_attributes: bool, 
+                                sample_data: bool, location_center: Optional[Union[List[float], Dict]], 
+                                sample_size: int) -> Dict:
+        """FIXED: Discover service with proper error handling."""
         config = self.services[service_name]
         
         print(f"📡 Discovering {service_name}: {config['name']}")
         
+        # Step 1: Basic service capabilities
         capabilities = self._get_service_capabilities(config["url"], get_attributes)
+        
+        if capabilities.get('error'):
+            return {"error": f"Could not access service: {capabilities['error']}", "discovery_success": False}
+        
+        # Step 2: Sample data analysis (if requested)
+        sample_analysis = {"sample_success": False}
+        if sample_data:
+            print(f"🧪 Sampling data for attribute value analysis...")
+            sample_analysis = self._analyze_sample_data(config, location_center, sample_size)
+        
+        # Step 3: Intelligent recommendations
+        print(f"🧠 Generating intelligent filter recommendations...")
+        recommendations = self._generate_filter_recommendations(config, sample_analysis, capabilities)
         
         result = {
             "service": {
                 **config,
                 "capabilities": capabilities,
-                "available": not capabilities.get('error'),
-                "layers": capabilities.get('layers', [])
+                "available": True
             },
-            "targeted_discovery": True,
-            "intent_guidance": self._get_intent_guidance(service_name),
-            "attribute_guidance": self._get_attribute_guidance(service_name, capabilities)
+            "sample_analysis": sample_analysis,
+            "filter_recommendations": recommendations,
+            "discovery_method": "enhanced_with_sample_analysis",
+            "discovery_success": True
         }
         
         return result
     
-    def _discover_all_services(self, get_attributes: bool) -> Dict:
-        """Discover all services (only when explicitly requested)."""
-        print("⚠️ Discovering ALL services - consider targeting specific service for better performance")
-        
-        discovered_services = {}
-        
-        for key, config in self.services.items():
-            print(f"📡 Checking {key}...")
-            capabilities = self._get_service_capabilities(config["url"], get_attributes)
-            
-            discovered_services[key] = {
-                **config,
-                "capabilities": capabilities,
-                "available": not capabilities.get('error'),
-                "layers": capabilities.get('layers', [])
-            }
-        
-        return {
-            "services": discovered_services,
-            "summary": f"Discovered {len(discovered_services)} PDOK services",
-            "recommendation": "Use targeted discovery for better performance - specify service_name",
-            "service_selection_guide": {
-                "land_use_analysis": "bestandbodemgebruik",
-                "agricultural_analysis": "bestandbodemgebruik", 
-                "building_analysis": "bag",
-                "parcel_analysis": "cadastral",
-                "environmental_analysis": "natura2000 or wetlands",
-                "administrative_analysis": "cbs"
-            }
-        }
-    
     def _get_service_capabilities(self, service_url: str, get_attributes: bool) -> Dict:
-        """Get capabilities and optionally attributes for a service."""
+        """Get service capabilities and attributes."""
         try:
             params = {
                 'service': 'WFS',
@@ -237,7 +210,7 @@ The tool returns detailed attribute information for targeted analysis."""
                 'request': 'GetCapabilities'
             }
             
-            print(f"  Requesting capabilities from: {service_url}")
+            print(f"  📡 Requesting capabilities from: {service_url}")
             response = requests.get(service_url, params=params, timeout=15)
             response.raise_for_status()
             
@@ -249,17 +222,15 @@ The tool returns detailed attribute information for targeted analysis."""
                 if feature_type.tag.endswith('FeatureType'):
                     name_elem = feature_type.find('.//{http://www.opengis.net/wfs/2.0}Name')
                     title_elem = feature_type.find('.//{http://www.opengis.net/wfs/2.0}Title')
-                    abstract_elem = feature_type.find('.//{http://www.opengis.net/wfs/2.0}Abstract')
                     
                     if name_elem is not None:
                         layer_info = {
                             "name": name_elem.text,
-                            "title": title_elem.text if title_elem is not None else name_elem.text,
-                            "description": abstract_elem.text if abstract_elem is not None else ""
+                            "title": title_elem.text if title_elem is not None else name_elem.text
                         }
                         
-                        # Get attributes if requested and for primary layers
-                        if get_attributes and self._is_primary_layer(name_elem.text, service_url):
+                        # Get attributes if requested
+                        if get_attributes and self._is_primary_layer(name_elem.text):
                             print(f"  🔬 Getting attributes for: {name_elem.text}")
                             attributes = self._get_layer_attributes(service_url, name_elem.text)
                             layer_info["attributes"] = attributes
@@ -269,8 +240,7 @@ The tool returns detailed attribute information for targeted analysis."""
             return {
                 "layers": layers,
                 "layer_count": len(layers),
-                "service_operational": True,
-                "attributes_retrieved": get_attributes
+                "service_operational": True
             }
             
         except Exception as e:
@@ -278,20 +248,344 @@ The tool returns detailed attribute information for targeted analysis."""
             print(f"  ❌ {error_msg}")
             return {"error": error_msg}
     
-    def _is_primary_layer(self, layer_name: str, service_url: str) -> bool:
+    def _analyze_sample_data(self, config: Dict, location_center: Optional[Union[List[float], Dict]], 
+                            sample_size: int) -> Dict:
+        """FIXED: Sample data with robust coordinate handling."""
+        try:
+            service_url = config["url"]
+            layer_name = config["primary_layer"]
+            coordinate_system = config["coordinate_system"]
+            
+            print(f"   🌐 Sampling from: {service_url}")
+            print(f"   📦 Layer: {layer_name}")
+            print(f"   📊 Sample size: {sample_size}")
+            print(f"   🗺️ Coordinate system: {coordinate_system}")
+            
+            # Build sample request parameters
+            params = {
+                'service': 'WFS',
+                'version': '2.0.0',
+                'request': 'GetFeature',
+                'typeName': layer_name,
+                'outputFormat': 'application/json',
+                'srsName': coordinate_system,
+                'count': sample_size
+            }
+            
+            # FIXED: Add spatial filter if location provided
+            if location_center:
+                bbox = self._create_sample_bbox_fixed(location_center, coordinate_system)
+                if bbox:
+                    params['bbox'] = f"{bbox},{coordinate_system}"
+                    print(f"   📍 Using spatial filter: {bbox}")
+                else:
+                    print(f"   ⚠️ Could not create spatial filter, using service default area")
+            
+            response = requests.get(service_url, params=params, timeout=30)
+            response.raise_for_status()
+            
+            data = response.json()
+            features = data.get('features', [])
+            
+            print(f"   ✅ Retrieved {len(features)} sample features")
+            
+            if not features:
+                return {
+                    "error": "No sample data available",
+                    "features_found": 0,
+                    "sample_success": False
+                }
+            
+            # Comprehensive attribute analysis
+            return self._perform_comprehensive_attribute_analysis(features, config)
+            
+        except Exception as e:
+            print(f"   ❌ Sample analysis error: {e}")
+            return {
+                "error": f"Could not analyze sample data: {str(e)}",
+                "sample_success": False
+            }
+    
+    def _create_sample_bbox_fixed(self, location_center: Union[List[float], Dict], coordinate_system: str) -> Optional[str]:
+        """FIXED: Create bounding box with proper coordinate handling."""
+        try:
+            # Extract coordinates from different input formats
+            if isinstance(location_center, dict):
+                if 'lat' in location_center and 'lon' in location_center:
+                    lat, lon = float(location_center['lat']), float(location_center['lon'])
+                else:
+                    print(f"   ❌ Invalid location_center dict format: {location_center}")
+                    return None
+            elif isinstance(location_center, (list, tuple)) and len(location_center) == 2:
+                lat, lon = float(location_center[0]), float(location_center[1])
+            else:
+                print(f"   ❌ Invalid location_center format: {location_center}")
+                return None
+            
+            print(f"   📍 Processing coordinates: lat={lat}, lon={lon}")
+            
+            if coordinate_system == "EPSG:4326":
+                # WGS84 - use degrees (approximately 10km radius)
+                buffer = 0.1
+                bbox = f"{lon-buffer},{lat-buffer},{lon+buffer},{lat+buffer}"
+                print(f"   🌐 WGS84 bbox created: {bbox}")
+                return bbox
+            
+            elif coordinate_system == "EPSG:28992":
+                # RD New - convert coordinates
+                try:
+                    import pyproj
+                    print(f"   🔄 Converting WGS84 to RD New...")
+                    
+                    # FIXED: Ensure inputs are scalar values
+                    transformer = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:28992", always_xy=True)
+                    x, y = transformer.transform(float(lon), float(lat))
+                    
+                    print(f"   📍 RD New coordinates: x={x:.2f}, y={y:.2f}")
+                    
+                    buffer = 10000  # 10km in meters
+                    bbox = f"{x-buffer},{y-buffer},{x+buffer},{y+buffer}"
+                    print(f"   🗺️ RD New bbox created: {bbox}")
+                    return bbox
+                    
+                except ImportError:
+                    print("   ⚠️ PyProj not available for coordinate transformation")
+                    return None
+                except Exception as e:
+                    print(f"   ❌ Coordinate transformation error: {e}")
+                    return None
+            
+            return None
+            
+        except Exception as e:
+            print(f"   ❌ Error creating bbox: {e}")
+            return None
+    
+    def _perform_comprehensive_attribute_analysis(self, features: List[Dict], config: Dict) -> Dict:
+        """FIXED: Perform comprehensive analysis with better error handling."""
+        try:
+            analysis_focus = config.get("analysis_focus", "")
+            
+            # Initialize analysis structure
+            attribute_analysis = {}
+            classification_fields = []
+            numeric_fields = []
+            area_fields = []
+            
+            print(f"   🔍 Analyzing {len(features)} features for {analysis_focus}")
+            
+            # Analyze each feature
+            for feature in features:
+                properties = feature.get('properties', {})
+                
+                for attr_name, attr_value in properties.items():
+                    if attr_name not in attribute_analysis:
+                        attribute_analysis[attr_name] = {
+                            "type": type(attr_value).__name__,
+                            "values": set(),
+                            "non_null_count": 0,
+                            "sample_values": [],
+                            "is_classification": False,
+                            "is_area": False
+                        }
+                    
+                    if attr_value is not None and attr_value != '':
+                        str_value = str(attr_value)
+                        attribute_analysis[attr_name]["values"].add(str_value)
+                        attribute_analysis[attr_name]["non_null_count"] += 1
+            
+            # Process analysis results
+            for attr_name, analysis in attribute_analysis.items():
+                values_list = list(analysis["values"])
+                analysis["unique_count"] = len(values_list)
+                analysis["sample_values"] = values_list[:10]  # Keep first 10 as examples
+                
+                # Classify attribute types
+                attr_lower = attr_name.lower()
+                
+                # Check if numeric/area field
+                if analysis["type"] in ["int", "float"] or self._is_numeric_field(values_list):
+                    numeric_fields.append(attr_name)
+                    
+                    # Check if area field
+                    if any(keyword in attr_lower for keyword in ['oppervlakte', 'grootte', 'area', 'shape_area']):
+                        analysis["is_area"] = True
+                        area_fields.append(attr_name)
+                
+                # Check if classification field
+                if (analysis["unique_count"] < 50 and analysis["unique_count"] > 1 and
+                    any(keyword in attr_lower for keyword in ['bodemgebruik', 'categorie', 'klasse', 'type', 'status'])):
+                    analysis["is_classification"] = True
+                    classification_fields.append(attr_name)
+                    
+                    # FIXED: Analyze classification values for land use
+                    if analysis_focus == "land_use_classification":
+                        analysis["agricultural_values"] = self._find_agricultural_values(values_list)
+                        analysis["urban_values"] = self._find_urban_values(values_list)
+                        analysis["natural_values"] = self._find_natural_values(values_list)
+                        
+                        print(f"   🌾 {attr_name} agricultural values: {analysis['agricultural_values']}")
+                        print(f"   🏙️ {attr_name} urban values: {analysis['urban_values']}")
+                    
+                    # Analyze for building status
+                    elif analysis_focus == "building_characteristics":
+                        analysis["active_values"] = self._find_active_building_values(values_list)
+                        print(f"   🏠 {attr_name} active values: {analysis['active_values']}")
+                
+                # Remove large values set to save memory
+                del analysis["values"]
+            
+            print(f"   📊 Analysis complete: {len(classification_fields)} classification fields found")
+            if classification_fields:
+                print(f"   🏷️ Classification fields: {classification_fields}")
+            
+            return {
+                "features_analyzed": len(features),
+                "total_attributes": len(attribute_analysis),
+                "attribute_details": attribute_analysis,
+                "classification_fields": classification_fields,
+                "numeric_fields": numeric_fields,
+                "area_fields": area_fields,
+                "sample_success": True,
+                "analysis_focus": analysis_focus
+            }
+            
+        except Exception as e:
+            print(f"   ❌ Attribute analysis error: {e}")
+            return {
+                "error": f"Attribute analysis failed: {str(e)}",
+                "sample_success": False
+            }
+    
+    def _find_agricultural_values(self, values: List[str]) -> List[str]:
+        """Find values that represent agricultural land use."""
+        agricultural_terms = ['agrarisch', 'landbouw', 'akkerbouw', 'veeteelt', 'grasland', 'weide']
+        return [v for v in values if any(term in v.lower() for term in agricultural_terms)]
+    
+    def _find_urban_values(self, values: List[str]) -> List[str]:
+        """Find values that represent urban/built-up land use."""
+        urban_terms = ['bebouwd', 'stedelijk', 'urban', 'woongebied', 'industrie', 'wonen']
+        return [v for v in values if any(term in v.lower() for term in urban_terms)]
+    
+    def _find_natural_values(self, values: List[str]) -> List[str]:
+        """Find values that represent natural land use."""
+        natural_terms = ['bos', 'natuur', 'water', 'natuurlijk', 'recreatie']
+        return [v for v in values if any(term in v.lower() for term in natural_terms)]
+    
+    def _find_active_building_values(self, values: List[str]) -> List[str]:
+        """Find values that represent active/in-use buildings."""
+        active_terms = ['gebruik', 'actief', 'in gebruik', 'operationeel']
+        return [v for v in values if any(term in v.lower() for term in active_terms)]
+    
+    def _is_numeric_field(self, values: List[str]) -> bool:
+        """Check if string values are actually numeric."""
+        try:
+            numeric_count = 0
+            for value in values[:5]:  # Check first 5 values
+                try:
+                    float(value)
+                    numeric_count += 1
+                except (ValueError, TypeError):
+                    pass
+            return numeric_count >= 3  # Majority numeric
+        except:
+            return False
+    
+    def _generate_filter_recommendations(self, config: Dict, sample_analysis: Dict, capabilities: Dict) -> Dict:
+        """Generate intelligent filter recommendations."""
+        recommendations = {
+            "primary_classification_field": None,
+            "recommended_filters": {},
+            "agricultural_filter": None,
+            "urban_filter": None,
+            "sample_based_guidance": {}
+        }
+        
+        if not sample_analysis.get("sample_success"):
+            recommendations["note"] = "No sample analysis available - filters based on schema only"
+            return recommendations
+        
+        analysis_focus = config.get("analysis_focus", "")
+        attribute_details = sample_analysis.get("attribute_details", {})
+        classification_fields = sample_analysis.get("classification_fields", [])
+        
+        # Find primary classification field
+        if classification_fields:
+            # For land use, prioritize 'bodemgebruik' or 'categorie'
+            if analysis_focus == "land_use_classification":
+                for field in ['bodemgebruik', 'categorie']:
+                    if field in classification_fields:
+                        recommendations["primary_classification_field"] = field
+                        break
+                if not recommendations["primary_classification_field"]:
+                    recommendations["primary_classification_field"] = classification_fields[0]
+            else:
+                recommendations["primary_classification_field"] = classification_fields[0]
+        
+        # Generate specific filter recommendations
+        primary_field = recommendations["primary_classification_field"]
+        if primary_field and primary_field in attribute_details:
+            field_analysis = attribute_details[primary_field]
+            
+            # FIXED: Create filters using discovered values
+            if analysis_focus == "land_use_classification":
+                agricultural_values = field_analysis.get("agricultural_values", [])
+                if agricultural_values:
+                    recommendations["agricultural_filter"] = self._create_filter_expression(primary_field, agricultural_values)
+                    recommendations["recommended_filters"]["agricultural_land"] = {
+                        "field": primary_field,
+                        "values": agricultural_values,
+                        "filter": recommendations["agricultural_filter"],
+                        "description": f"Filter for agricultural land using discovered values"
+                    }
+                
+                urban_values = field_analysis.get("urban_values", [])
+                if urban_values:
+                    recommendations["urban_filter"] = self._create_filter_expression(primary_field, urban_values)
+                    recommendations["recommended_filters"]["urban_areas"] = {
+                        "field": primary_field,
+                        "values": urban_values,
+                        "filter": recommendations["urban_filter"],
+                        "description": f"Filter for urban areas using discovered values"
+                    }
+            
+            # Add guidance for available values
+            all_values = field_analysis.get("sample_values", [])
+            if all_values:
+                recommendations["sample_based_guidance"][primary_field] = {
+                    "available_values": all_values[:10],
+                    "usage": f"Use {primary_field} = 'value' with one of the available values",
+                    "total_unique_values": field_analysis.get("unique_count", 0)
+                }
+        
+        return recommendations
+    
+    def _create_filter_expression(self, field_name: str, values: List[str]) -> str:
+        """Create appropriate filter expression for field and values."""
+        if len(values) == 1:
+            return f"{field_name} = '{values[0]}'"
+        elif len(values) <= 5:
+            value_list = "','".join(values)
+            return f"{field_name} IN ('{value_list}')"
+        else:
+            # Too many values, use first few
+            value_list = "','".join(values[:3])
+            return f"{field_name} IN ('{value_list}') /* and {len(values)-3} more values */"
+    
+    def _is_primary_layer(self, layer_name: str) -> bool:
         """Check if this is a primary layer we should get attributes for."""
         primary_layers = [
             "bestand_bodemgebruik_2015",
             "bag:pand",
             "kadastralekaart:Perceel", 
             "natura2000:natura2000",
-            "beschermdegebieden:protectedsite"
+            "cbs_gemeente"
         ]
         
         return any(primary in layer_name for primary in primary_layers)
     
     def _get_layer_attributes(self, service_url: str, layer_name: str) -> Dict:
-        """Get attributes for a specific layer."""
+        """Get detailed attributes for a specific layer."""
         try:
             params = {
                 'service': 'WFS',
@@ -317,8 +611,7 @@ The tool returns detailed attribute information for targeted analysis."""
                     if attr_name and not attr_name.lower() in ['geometry', 'geom']:
                         attributes[attr_name] = {
                             "type": attr_type,
-                            "filterable": True,
-                            "usage": self._generate_attribute_usage(attr_name)
+                            "filterable": True
                         }
             
             return {
@@ -330,151 +623,51 @@ The tool returns detailed attribute information for targeted analysis."""
         except Exception as e:
             print(f"    ⚠️ Could not get attributes for {layer_name}: {e}")
             return {"error": f"Could not get attributes: {str(e)}"}
-    
-    def _generate_attribute_usage(self, attr_name: str) -> str:
-        """Generate usage guidance for attributes."""
-        attr_lower = attr_name.lower()
-        
-        if 'hoofdklasse' in attr_lower:
-            return "Primary land use classification - use for filtering by land use type"
-        elif 'code' in attr_lower and 'klasse' in attr_lower:
-            return "Classification code - use for specific land use category filtering"
-        elif 'area' in attr_lower or 'oppervlakte' in attr_lower:
-            return "Area measurement - use for size-based filtering (numeric)"
-        elif 'grootte' in attr_lower:
-            return "Size/area field - use for area-based filtering (numeric)"
-        elif 'jaar' in attr_lower or 'year' in attr_lower:
-            return "Year field - use for temporal filtering (numeric)"
-        elif 'naam' in attr_lower or 'name' in attr_lower:
-            return "Name field - use for text-based filtering"
-        elif 'type' in attr_lower or 'status' in attr_lower:
-            return "Category/status field - use for classification filtering"
-        else:
-            return "General attribute - check data type for appropriate filtering"
-    
-    def _get_intent_guidance(self, service_name: str) -> Dict:
-        """Provide intent-specific guidance for using the service."""
-        guidance = {
-            "bestandbodemgebruik": {
-                "primary_use": "Land use classification and agricultural analysis",
-                "analysis_types": ["Agricultural land distribution", "Urban vs rural analysis", "Land use planning"],
-                "common_filters": ["Land use classification codes", "Area thresholds"],
-                "next_steps": [
-                    "1. Use discovered classification attributes to filter by land use type",
-                    "2. Use area attributes to filter by size thresholds",
-                    "3. Calculate total areas by classification type"
-                ]
-            },
-            "bag": {
-                "primary_use": "Building and address analysis",
-                "analysis_types": ["Building age analysis", "Building size distribution", "Address lookup"],
-                "common_filters": ["Construction year", "Building area", "Building status"],
-                "next_steps": [
-                    "1. Use 'bouwjaar' for construction year filtering",
-                    "2. Use area attributes for size-based analysis",
-                    "3. Filter by building status for active buildings"
-                ]
-            },
-            "cadastral": {
-                "primary_use": "Parcel visualization and area analysis",
-                "analysis_types": ["Property size analysis", "Parcel boundary visualization"],
-                "common_filters": ["Parcel area (kadastraleGrootteWaarde)", "Parcel numbers"],
-                "next_steps": [
-                    "1. Use 'kadastraleGrootteWaarde' for parcel area filtering",
-                    "2. Filter by size thresholds for suitability analysis"
-                ]
-            }
-        }
-        
-        return guidance.get(service_name, {
-            "primary_use": "General spatial analysis",
-            "analysis_types": ["Spatial queries", "Feature analysis"],
-            "common_filters": ["Area, name, type fields"],
-            "next_steps": ["Use discovered attributes for filtering"]
-        })
-    
-    def _get_attribute_guidance(self, service_name: str, capabilities: Dict) -> Dict:
-        """Provide specific attribute usage guidance."""
-        if capabilities.get('error'):
-            return {"note": "No attributes available due to capability error"}
-        
-        layers = capabilities.get('layers', [])
-        attribute_guidance = {}
-        
-        for layer in layers:
-            if 'attributes' in layer and layer['attributes']:
-                layer_name = layer['name']
-                attributes = layer['attributes'].get('details', {})
-                
-                layer_guidance = {}
-                for attr_name, attr_info in attributes.items():
-                    layer_guidance[attr_name] = {
-                        "type": attr_info.get('type', 'unknown'),
-                        "usage": attr_info.get('usage', 'General attribute'),
-                        "example_filter": self._generate_example_filter(attr_name, attr_info.get('type', ''))
-                    }
-                
-                attribute_guidance[layer_name] = layer_guidance
-        
-        return attribute_guidance
-    
-    def _generate_example_filter(self, attr_name: str, attr_type: str) -> str:
-        """Generate example filter for an attribute."""
-        attr_lower = attr_name.lower()
-        
-        if 'int' in attr_type.lower() or 'double' in attr_type.lower() or 'decimal' in attr_type.lower():
-            if 'area' in attr_lower or 'grootte' in attr_lower:
-                return f"{attr_name} >= 5000"  # Area example
-            elif 'jaar' in attr_lower or 'year' in attr_lower:
-                return f"{attr_name} <= 1950"  # Year example
-            else:
-                return f"{attr_name} > 100"  # General numeric
-        else:
-            if 'klasse' in attr_lower or 'type' in attr_lower:
-                return f"{attr_name} = 'agrarisch'"  # Classification example
-            else:
-                return f"{attr_name} LIKE '%search_term%'"  # Text example
 
 
+# Quick test function
+def test_fixed_discovery():
+    """Test the fixed discovery tool."""
+    discovery_tool = IntentDrivenPDOKDiscoveryTool()
+    
+    print("🧪 Testing FIXED Discovery Tool")
+    print("=" * 50)
+    
+    # Test land use discovery with sampling
+    result = discovery_tool.forward(
+        service_name="bestandbodemgebruik",
+        get_attributes=True,
+        sample_data=True,
+        location_center=[52.0887, 5.0953],  # Utrecht
+        sample_size=15
+    )
+    
+    if result.get("discovery_success"):
+        print("✅ Discovery successful!")
+        
+        sample_analysis = result.get("sample_analysis", {})
+        if sample_analysis.get("sample_success"):
+            print(f"📊 Analyzed {sample_analysis['features_analyzed']} features")
+            
+            # Show discovered values for classification fields
+            attr_details = sample_analysis.get("attribute_details", {})
+            for field in sample_analysis.get("classification_fields", []):
+                if field in attr_details:
+                    field_data = attr_details[field]
+                    print(f"🏷️ Field '{field}':")
+                    print(f"   Sample values: {field_data.get('sample_values', [])[:5]}")
+                    print(f"   Agricultural: {field_data.get('agricultural_values', [])}")
+                    print(f"   Urban: {field_data.get('urban_values', [])}")
+        
+        # Show filter recommendations
+        recommendations = result.get("filter_recommendations", {})
+        if recommendations.get("agricultural_filter"):
+            print(f"🌾 Recommended agricultural filter: {recommendations['agricultural_filter']}")
+        if recommendations.get("urban_filter"):
+            print(f"🏙️ Recommended urban filter: {recommendations['urban_filter']}")
+    
+    else:
+        print(f"❌ Discovery failed: {result.get('error')}")
 
-class CoreToolRegistry:
-    """Registry of core tools that should be kept in the project."""
-    
-    ESSENTIAL_TOOLS = {
-        # Discovery and planning
-        "enhanced_discovery_tool.py": "Intent-driven PDOK service discovery",
-        
-        # Data fetching  
-        "flexible_ai_driven_spatial_tools.py": "Flexible data fetching and analysis",
-        
-        # Location services
-        "enhanced_pdok_location_tool.py": "Intelligent location search",
-        
-        # Coordinate conversion
-        "coordinate_conversion_tool.py": "WGS84 to RD New conversion",
-        
-        # Tool initialization
-        "__init__.py": "Tool registry and imports"
-    }
-    
-    DEPRECATED_TOOLS = {
-        # Old rigid tools that can be removed
-        "ai_intelligent_tools.py": "Replaced by enhanced_discovery_tool.py",
-        "enhanced_ai_intelligent_tools.py": "Redundant with enhanced_discovery_tool.py", 
-        "enhanced_multi_layer_spatial_tool.py": "Complex tool not used by current workflow",
-        "kadaster_tool.py": "Old rigid cadastral tool",
-        "pdok_building_tool.py": "Old rigid building tool",
-        "pdok_intelligent_agent_tool.py": "Old complex agent tool",
-        "pdok_modular_tools.py": "Old modular approach",
-        "pdok_service_discovery_tool.py": "Old service discovery"
-    }
-    
-    @classmethod
-    def get_cleanup_plan(cls):
-        """Get plan for cleaning up tools directory."""
-        return {
-            "keep": list(cls.ESSENTIAL_TOOLS.keys()),
-            "remove": list(cls.DEPRECATED_TOOLS.keys()),
-            "keep_descriptions": cls.ESSENTIAL_TOOLS,
-            "remove_reasons": cls.DEPRECATED_TOOLS
-        }
+if __name__ == "__main__":
+    test_fixed_discovery()
