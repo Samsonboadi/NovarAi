@@ -1,3 +1,4 @@
+
 console.log("Loading INTELLIGENT Production Map-Aware PDOK Chat Assistant");
 
 try {
@@ -6,9 +7,9 @@ try {
     const container = document.getElementById('root');
     const root = ReactDOM.createRoot ? ReactDOM.createRoot(container) : null;
 
-    // Building Legend Component
-    const BuildingLegend = ({ layerType }) => {
-        if (layerType !== 'buildings' && layerType !== 'bag') {
+    // Dynamic Legend Component
+    const DynamicLegend = ({ layerType, features }) => {
+        if (!layerType || !features || features.length === 0) {
             return null;
         }
 
@@ -27,14 +28,45 @@ try {
             backdropFilter: 'blur(5px)'
         };
 
-        const ageCategories = [
-            { label: 'Historic (< 1900)', color: '#8B0000' },
-            { label: 'Pre-war (1900-1949)', color: '#FF4500' },
-            { label: 'Post-war (1950-1979)', color: '#32CD32' },
-            { label: 'Late 20th C (1980-1999)', color: '#1E90FF' },
-            { label: 'Modern (2000+)', color: '#FF1493' },
-            { label: 'Unknown Age', color: '#808080' }
-        ];
+        let title = '';
+        let categories = [];
+
+        if (layerType === 'buildings' || layerType === 'bag') {
+            title = '🏠 Buildings by Age';
+            categories = [
+                { label: 'Historic (< 1900)', color: '#8B0000' },
+                { label: 'Pre-war (1900-1949)', color: '#FF4500' },
+                { label: 'Post-war (1950-1979)', color: '#32CD32' },
+                { label: 'Late 20th C (1980-1999)', color: '#1E90FF' },
+                { label: 'Modern (2000+)', color: '#FF1493' },
+                { label: 'Unknown Age', color: '#808080' }
+            ];
+        } else if (layerType === 'cadastral' || layerType === 'parcels') {
+            title = '📐 Parcels by Size';
+            categories = [
+                { label: 'Large (>5 ha)', color: '#dc2626' },
+                { label: 'Medium (1-5 ha)', color: '#f97316' },
+                { label: 'Small (<1 ha)', color: '#22c55e' }
+            ];
+        } else if (layerType === 'bestandbodemgebruik' || layerType === 'land_use') {
+            title = '🌾 Land Use Types';
+            categories = [
+                { label: 'Agricultural', color: '#22c55e' },
+                { label: 'Built-up', color: '#ef4444' },
+                { label: 'Forest', color: '#16a34a' },
+                { label: 'Water', color: '#3b82f6' }
+            ];
+        } else if (layerType === 'natura2000' || layerType === 'environmental') {
+            title = '🌿 Protected Areas';
+            categories = [
+                { label: 'Nature Reserve', color: '#22c55e' }
+            ];
+        } else {
+            title = '📊 Features';
+            categories = [
+                { label: 'Features', color: '#3b82f6' }
+            ];
+        }
 
         return React.createElement('div', {
             style: legendStyle
@@ -49,8 +81,8 @@ try {
                     display: 'flex',
                     alignItems: 'center'
                 }
-            }, '🏠 Buildings by Age'),
-            ...ageCategories.map((category, index) => 
+            }, title),
+            ...categories.map((category, index) => 
                 React.createElement('div', {
                     key: `category-${index}`,
                     style: { 
@@ -86,7 +118,7 @@ try {
         ]);
     };
 
-    // Restored Intelligent Location Pin Component
+    // Intelligent Location Pin Component
     const IntelligentLocationPin = ({ searchLocation, mapInstance, locationPinRef }) => {
         useEffect(() => {
             console.log("🔍 IntelligentLocationPin effect:", searchLocation);
@@ -200,14 +232,14 @@ try {
     };
 
     const App = () => {
-        console.log("Initializing  INTELLIGENT Map component");
+        console.log("Initializing INTELLIGENT Map component");
         
         // State management
         const [query, setQuery] = useState('');
         const [messages, setMessages] = useState([
             {
                 type: 'assistant',
-                content: 'Hello! I\'m your  intelligent PDOK assistant.\n\n🧠 I can analyze your queries and provide spatial data efficiently.\n\nTry asking:\n"Show buildings near Groningen"\n"Agricultural land in Utrecht province"\n"Large parcels in Amsterdam"',
+                content: 'Hello! I\'m your intelligent PDOK assistant.\n\n🧠 I can analyze your queries and provide spatial data efficiently.\n\nTry asking:\n"Show buildings near Groningen"\n"Agricultural land in Utrecht province"\n"Large parcels in Amsterdam"',
                 timestamp: new Date()
             }
         ]);
@@ -218,14 +250,14 @@ try {
         const [mapCenter, setMapCenter] = useState([5.2913, 52.1326]);
         const [mapZoom, setMapZoom] = useState(8);
         const [layerType, setLayerType] = useState(null);
-        const [searchLocation, setSearchLocation] = useState(null); // Restored state for location pin
+        const [searchLocation, setSearchLocation] = useState(null);
         
         // Refs
         const mapRef = useRef(null);
         const mapInstance = useRef(null);
         const overlayRef = useRef(null);
         const messagesEndRef = useRef(null);
-        const locationPinRef = useRef(null); // Restored ref for location pin
+        const locationPinRef = useRef(null);
 
         // Auto-scroll messages
         const scrollToBottom = () => {
@@ -296,7 +328,6 @@ try {
                 });
                 mapInstance.current.addOverlay(overlayRef.current);
 
-                // Restored: Initialize location pin overlay
                 locationPinRef.current = new ol.Overlay({
                     positioning: 'bottom-center',
                     stopEvent: false,
@@ -360,6 +391,32 @@ try {
                             if (props.status) {
                                 popupContent += `<p><span class="font-medium">Status:</span> ${props.status}</p>`;
                             }
+                        } else if (layerType === 'cadastral' || layerType === 'parcels') {
+                            if (props.kadastraleGrootteWaarde) {
+                                const areaM2 = parseFloat(props.kadastraleGrootteWaarde);
+                                const areaHa = areaM2 / 10000;
+                                popupContent += `<p><span class="font-medium">Area:</span> ${areaM2.toFixed(0)} m² (${areaHa.toFixed(2)} ha)</p>`;
+                            }
+                            
+                            if (props.perceelnummer) {
+                                popupContent += `<p><span class="font-medium">Parcel Number:</span> ${props.perceelnummer}</p>`;
+                            }
+                            
+                            if (props.kadastraleGemeenteWaarde) {
+                                popupContent += `<p><span class="font-medium">Municipality:</span> ${props.kadastraleGemeenteWaarde}</p>`;
+                            }
+                            
+                            if (props.sectie) {
+                                popupContent += `<p><span class="font-medium">Section:</span> ${props.sectie}</p>`;
+                            }
+                        } else if (layerType === 'bestandbodemgebruik' || layerType === 'land_use') {
+                            if (props.bodemgebruik) {
+                                popupContent += `<p><span class="font-medium">Land Use:</span> ${props.bodemgebruik}</p>`;
+                            }
+                        } else if (layerType === 'natura2000' || layerType === 'environmental') {
+                            if (props.naam) {
+                                popupContent += `<p><span class="font-medium">Name:</span> ${props.naam}</p>`;
+                            }
                         }
                         
                         popupContent += `
@@ -374,7 +431,7 @@ try {
                     }
                 });
 
-                console.log("✅  intelligent map setup complete");
+                console.log("✅ intelligent map setup complete");
 
                 return () => {
                     if (mapInstance.current) {
@@ -486,7 +543,7 @@ try {
             }
         };
 
-        // Restored: Extract location from query text as fallback
+        // Extract location from query text as fallback
         const extractLocationFromQuery = (queryText, features) => {
             const locationPatterns = [
                 /(?:in|near|around|at)\s+([A-Za-z][A-Za-z\s]+?)(?:\s|$|,|\.|province)/i,
@@ -583,7 +640,6 @@ try {
                         foundFeatures = true;
                     }
                     
-                    // Restored: Handle search location
                     const backendSearchLocation = data.search_location;
                     if (backendSearchLocation && 
                         backendSearchLocation.lat && 
@@ -651,6 +707,7 @@ try {
             });
 
             if (!data || data.length === 0) {
+                console.warn("⚠️ No features to display");
                 return;
             }
 
@@ -703,8 +760,6 @@ try {
                 }
             });
 
-            console.log(`✅ Added ${featuresAdded}/${data.length} valid features to map`);
-
             if (featuresAdded === 0) {
                 console.error("❌ No features were successfully added to the map");
                 return;
@@ -744,7 +799,7 @@ try {
         const clearMap = () => {
             setFeatures([]);
             setLayerType(null);
-            setSearchLocation(null); // Clear search location
+            setSearchLocation(null);
             
             if (mapInstance.current) {
                 const layersToRemove = [];
@@ -781,7 +836,7 @@ try {
                 {/* Map Container */}
                 <div ref={mapRef} className="h-full w-full"></div>
                 
-                {/* Restored: Intelligent Location Pin Component */}
+                {/* Intelligent Location Pin Component */}
                 {React.createElement(IntelligentLocationPin, { 
                     searchLocation, 
                     mapInstance, 
@@ -843,8 +898,8 @@ try {
                     </div>
                 </div>
 
-                {/* Building Legend */}
-                {React.createElement(BuildingLegend, { layerType })}
+                {/* Dynamic Legend */}
+                {React.createElement(DynamicLegend, { layerType, features })}
 
                 {/* Chat Interface */}
                 {isChatOpen ? (
@@ -856,7 +911,7 @@ try {
                                     isLoading ? 'bg-yellow-400 animate-pulse' : 'bg-blue-400'
                                 }`}></div>
                                 <div>
-                                    <h2 className="text-lg font-semibold text-white">🧠  AI Assistant</h2>
+                                    <h2 className="text-lg font-semibold text-white">🧠 AI Assistant</h2>
                                     <p className="text-sm text-blue-100">
                                         {isLoading ? 'Processing...' : 'Ready for questions'}
                                     </p>
@@ -988,5 +1043,5 @@ try {
     }
     
 } catch (error) {
-    console.error("❌ Failed to initialize  INTELLIGENT React app:", error);
+    console.error("❌ Failed to initialize INTELLIGENT React app:", error);
 }
